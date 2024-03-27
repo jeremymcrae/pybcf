@@ -14,8 +14,8 @@ class BCF {
   igzstream infile;
 public:
   BCF(std::string path);
-  std::string header="";
   Variant next();
-}
+  std::string header="";
+};
 
 }

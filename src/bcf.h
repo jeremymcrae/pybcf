@@ -1,4 +1,5 @@
-
+#ifndef BCF_BCF_H
+#define BCF_BCF_H
 
 #include <vector>
 #include <string>
@@ -19,3 +20,5 @@ public:
 };
 
 }
+
+#endif

@@ -69,13 +69,15 @@ Header::Header(std::string & text) {
       if (parsed.size() == 2) {
         std::string id = parsed[0];
         std::string remainder = parsed[1];
-        is_valid = valid.count(id) > 0;
-        if (is_valid) {
-          data = parse_delimited(remainder);
+        
+        if (!(valid.count(id) > 0)) {
+          continue;
         }
         
+        data = parse_delimited(remainder);
         if (id == "contig") {
-          contigs[idx] = {data["ID"]};
+          contigs[contig_idx] = {data["ID"]};
+          contig_idx += 1;
         } else if (id == "INFO") {
           info[idx] = {data["ID"], data["Number"], data["Type"], 
                        data["Description"]};
@@ -85,7 +87,7 @@ Header::Header(std::string & text) {
         } else if ((id == "FILTER") && (data["ID"] != "PASS")) {
           filters[idx] = {data["ID"], data["Description"]};
         }
-        idx += is_valid;
+        idx += (id != "contig");
       }
     }
   }

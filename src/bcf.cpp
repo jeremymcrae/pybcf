@@ -26,7 +26,6 @@ BCF::BCF(std::string path) {
   infile.read(reinterpret_cast<char *>(&len), sizeof(len));
   std::string text(len, ' ');
   infile.read(reinterpret_cast<char *>(&text[0]), len);
-  std::cout << text << std::endl;
   header = Header(text);
 }
 

@@ -30,7 +30,7 @@ BCF::BCF(std::string path) {
 }
 
 Variant BCF::next() {
-  return Variant(infile);
+  return Variant(infile, header);
 }
 
 

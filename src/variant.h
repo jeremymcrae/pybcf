@@ -1,15 +1,38 @@
 #ifndef BCF_VARIANT_H
 #define BCF_VARIANT_H
 
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <unordered_map>
+
 #include "gzstream/gzstream.h"
+
+#include "header.h"
 
 namespace bcf {
 
 
 class Variant {
-  
+  std::uint32_t metadata_len=0;
+  std::uint32_t sampledata_len=0;
+  std::int32_t rlen=0;
+  std::uint32_t n_alleles=0;
+  std::uint32_t n_info=0;
+  std::uint32_t n_fmt=0;
+  std::uint32_t n_sample=0;
+  Header header;
 public:
-    Variant(igzstream & infile);
+  Variant(igzstream & infile, Header & _header);
+  float * genotypes();
+  
+  std::int32_t chrom=0;
+  std::int32_t pos=0;
+  std::string ref="";
+  std::vector<std::string> alts;
+  float qual=0x7f800001;
+  std::string varid="";
+  std::vector<std::string> filters;
 };
 
 }

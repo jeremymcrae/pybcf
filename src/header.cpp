@@ -26,7 +26,7 @@ static std::vector<std::string> split_line(std::string line) {
   size_t delim_pos = line.find('=');
   std::vector<std::string> data;
   if (delim_pos != std::string::npos) {
-    data.push_back(line.substr(0, delim_pos - 1));
+    data.push_back(line.substr(0, delim_pos));
     data.push_back(line.substr(delim_pos + 1, line.size() - delim_pos));
   } else {
     data.push_back(line);

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from libcpp cimport bool
 from libcpp.string cimport string
-from libcpp.vector cimport string
+from libcpp.vector cimport vector
 
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:

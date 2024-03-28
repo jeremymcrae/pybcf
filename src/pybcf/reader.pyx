@@ -2,6 +2,7 @@
 import logging
 from pathlib import Path
 
+from libcpp cimport bool
 from libcpp.string cimport string
 
 cdef extern from 'bcf.h' namespace 'bcf':
@@ -15,12 +16,14 @@ cdef class BcfReader:
     '''
     cdef BCF * thisptr
     cdef string path
+    cdef bool is_open
     def __cinit__(self, path):
-        self.path = str(path) if isinstance(path, Path) else path
-        self.path = self.path.encode('utf8')
+        path = str(path) if isinstance(path, Path) else path
+        self.path = path.encode('utf8')
         
         logging.debug(f'opening BcfReader from {self.path.decode("utf")}')
         self.thisptr = new BCF(self.path)
+        self.is_open = True
     
     def __dealloc__(self):
         if self.is_open:

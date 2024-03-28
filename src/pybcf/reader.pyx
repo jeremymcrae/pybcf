@@ -8,7 +8,7 @@ cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
         BCF(string path) except +
-        # Variant & next()
+        Variant & nextvar()
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within

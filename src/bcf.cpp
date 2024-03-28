@@ -29,7 +29,7 @@ BCF::BCF(std::string path) {
   header = Header(text);
 }
 
-Variant BCF::next() {
+Variant BCF::nextvar() {
   return Variant(infile, header);
 }
 

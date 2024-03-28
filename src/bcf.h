@@ -15,10 +15,9 @@ namespace bcf {
 class BCF {
   igzstream infile;
   Header header;
-  std::string curr_line = "";
 public:
   BCF(std::string path);
-  Variant next();
+  Variant nextvar();
 };
 
 }

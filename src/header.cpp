@@ -55,8 +55,7 @@ static std::unordered_map<std::string, std::string> parse_delimited(std::string 
 }
 
 Header::Header(std::string & text) {
-  filters[idx] = {"PASS", "default"};
-  idx += 1;
+  filters[idx] = {"PASS", "All filters passed"};
   
   std::istringstream lines(text);
   std::string line;

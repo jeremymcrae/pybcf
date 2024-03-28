@@ -4,12 +4,44 @@ from pathlib import Path
 
 from libcpp cimport bool
 from libcpp.string cimport string
+from libcpp.vector cimport string
 
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
         BCF(string path) except +
         Variant & nextvar()
+
+cdef extern from 'gzstream/gzstream.h' namespace 'GZSTREAM_NAMESPACE':
+    cdef cppclass igzstream:
+        igzstream(const char* path) except +
+
+cdef extern from 'header.h' namespace 'bcf':
+    cdef cppclass Header:
+        # declare class constructor and methods
+        Header(string text) except +
+        
+cdef extern from 'variant.h' namespace 'bcf':
+    cdef cppclass Variant:
+        # declare class constructor and methods
+        Variant() except +
+        Variant(igzstream infile, Header header) except +
+        string chrom
+        int pos
+        string ref
+        vector[string] alts
+        float qual
+        string varid
+        vector[string] filters
+
+cdef class BcfVariant:
+    cdef Variant * thisptr
+    cdef _set_variant(self, Variant * ptr):
+        self.thisptr = ptr
+    
+    @property
+    def chrom(self):
+        return self.thisptr.chrom.decode('utf8')
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within
@@ -39,7 +71,10 @@ cdef class BcfReader:
     def __next__(self):
         ''' iterate through all variants in the bcf file
         '''
-        raise NotImplementedError
+        cdef Variant var = self.thisptr.nextvar()
+        pyvar = BcfVariant()
+        pyvar._set_variant(&var)
+        return pyvar
     
     @property
     def header(self):

@@ -23,14 +23,11 @@ BCF::BCF(std::string path) {
   }
   
   std::uint32_t len;
-  std::string text;
   infile.read(reinterpret_cast<char *>(&len), sizeof(len));
-  std::copy_n(std::istream_iterator<char>(infile), len, std::back_inserter(text));
+  std::string text(len, ' ');
+  infile.read(reinterpret_cast<char *>(&text[0]), len);
+  std::cout << text << std::endl;
   header = Header(text);
-  
-  std::string header_text(header_len, ' ');
-  infile.read(reinterpret_cast<char *>(&header_text), header_len);
-  header = Header(header_text);
 }
 
 Variant BCF::next() {

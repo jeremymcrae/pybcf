@@ -13,7 +13,6 @@
 namespace bcf {
 
 class BCF {
-  std::ifstream handle;
   igzstream infile;
   Header header;
   std::string curr_line = "";

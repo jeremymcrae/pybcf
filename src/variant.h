@@ -1,7 +1,7 @@
 #ifndef BCF_VARIANT_H
 #define BCF_VARIANT_H
 
-#include <string>
+#include "gzstream/gzstream.h"
 
 namespace bcf {
 
@@ -9,7 +9,7 @@ namespace bcf {
 class Variant {
   
 public:
-  Variant(std::string & line);
+    Variant(igzstream & infile);
 };
 
 }

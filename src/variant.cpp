@@ -4,7 +4,7 @@
 
 namespace bcf {
 
-Variant::Variant(std::string & line) {
+Variant::Variant(igzstream & infile) {
   
 }
 

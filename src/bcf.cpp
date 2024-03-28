@@ -30,8 +30,7 @@ BCF::BCF(std::string path) {
 }
 
 Variant BCF::next() {
-  std::getline(infile, curr_line);
-  return Variant(curr_line);
+  return Variant(infile);
 }
 
 

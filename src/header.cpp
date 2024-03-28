@@ -82,10 +82,10 @@ Header::Header(std::string & text) {
         } else if (id == "FORMAT") {
           format[idx] = {data["ID"], data["Number"], data["Type"], 
                          data["Description"]};
-        } else if (id == "FILTER") {
+        } else if ((id == "FILTER") && (data["ID"] != "PASS")) {
           filters[idx] = {data["ID"], data["Description"]};
         }
-      idx += is_valid;
+        idx += is_valid;
       }
     }
   }

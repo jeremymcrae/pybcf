@@ -22,7 +22,7 @@ BCF::BCF(std::string path) {
   }
   
   std::uint32_t header_len;
-  handle.read(reinterpret_cast<char *>(&header_len), sizeof(header_len));
+  infile.read(reinterpret_cast<char *>(&header_len), sizeof(header_len));
   
   std::string header_text(header_len, ' ');
   infile.read(reinterpret_cast<char *>(&header_text), header_len);

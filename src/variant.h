@@ -16,6 +16,7 @@ namespace bcf {
 class Variant {
   std::uint32_t metadata_len=0;
   std::uint32_t sampledata_len=0;
+  std::int32_t contig_idx=0;
   std::int32_t rlen=0;
   std::uint32_t n_alleles=0;
   std::uint32_t n_info=0;
@@ -26,7 +27,7 @@ public:
   Variant(igzstream & infile, Header & _header);
   float * genotypes();
   
-  std::int32_t chrom=0;
+  std::string chrom="";
   std::int32_t pos=0;
   std::string ref="";
   std::vector<std::string> alts;

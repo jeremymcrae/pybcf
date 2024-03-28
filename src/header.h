@@ -34,6 +34,7 @@ struct Info {
 class Header {
   std::unordered_set<std::string> valid = {"contig", "INFO", "FILTER", "FORMAT"};
   std::uint32_t idx=0;
+  std::uint32_t contig_idx=0;
 public:
   Header(std::string &text);
   Header() {}

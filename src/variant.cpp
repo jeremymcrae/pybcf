@@ -4,7 +4,7 @@
 
 namespace bcf {
 
-Variant::Variant() {
+Variant::Variant(std::string & line) {
   
 }
 

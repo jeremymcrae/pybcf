@@ -4,7 +4,7 @@
 
 namespace bcf {
 
-Header::Header() {
+Header::Header(std::string & text) {
   
 }
 

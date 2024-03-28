@@ -2,8 +2,8 @@
 __pycache__/
 dist/
 build/
-src/bcf/*.cpp
-src/bcf/*.so
+src/pybcf/*.cpp
+src/pybcf/*.so
 *.egg
 *.egg-info/
 *.DS_Store

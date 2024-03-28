@@ -41,21 +41,16 @@ static std::unordered_map<std::string, std::string> parse_delimited(std::string 
   text = trim(text, "<>");
   std::unordered_map<std::string, std::string> data;
 
-  size_t start = 0;
-  size_t end = 0;
-  size_t delim_pos;
-  std::string key, value;
-  end = text.find(',');
-  
-  while ((start != end) && (start != std::string::npos)) {
-    delim_pos = text.find('=', start);
-    key = text.substr(start, delim_pos - start);
-    value = text.substr(delim_pos + 1, end - delim_pos);
-    data[key] = value;
-    start = end;
-    end = text.find(',', start + 1);
+  size_t delim;
+  std::string item, key, value;
+  std::istringstream iss(text);
+
+  while (std::getline(iss, item, ',')) {
+    delim = item.find('=');
+    key = item.substr(0, delim);
+    value = item.substr(delim + 1, item.size() - delim);
+    data[key] = trim(value, "\"");
   }
-  
   return data;
 }
 

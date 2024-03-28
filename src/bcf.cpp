@@ -1,5 +1,6 @@
 
-
+#include <algorithm>
+#include <iterator>
 #include <stdexcept>
 
 #include "bcf.h"
@@ -21,8 +22,11 @@ BCF::BCF(std::string path) {
     throw std::invalid_argument("doesn't look like a BCF2.2 file");
   }
   
-  std::uint32_t header_len;
-  infile.read(reinterpret_cast<char *>(&header_len), sizeof(header_len));
+  std::uint32_t len;
+  std::string text;
+  infile.read(reinterpret_cast<char *>(&len), sizeof(len));
+  std::copy_n(std::istream_iterator<char>(infile), len, std::back_inserter(text));
+  header = Header(text);
   
   std::string header_text(header_len, ' ');
   infile.read(reinterpret_cast<char *>(&header_text), header_len);

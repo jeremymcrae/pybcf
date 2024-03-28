@@ -17,8 +17,8 @@ BCF::BCF(std::string path) {
   // check the file header indicates this is a bcf file
   char magic[5];
   infile.read(&magic[0], 5);
-  if (magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != '\2' || magic[4] != '\1') {
-    throw std::invalid_argument("");
+  if (magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != 2 || magic[4] != 2) {
+    throw std::invalid_argument("doesn't look like a BCF2.2 file");
   }
   
   std::uint32_t header_len;

@@ -119,7 +119,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           }
           break;
         default:
-          i_val = get_int(infile, type_val.n_vals);
+          i_val = get_int(infile, type_val.type_size);
           if (type_val.n_vals == 1) {
             scalar_ints.push_back(i_val);
           } else {

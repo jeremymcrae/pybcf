@@ -1,53 +1,10 @@
 
 
 #include "variant.h"
+#include "info.h"
+#include "types.h"
 
 namespace bcf {
-
-enum Types {
-  int8=1,
-  int16=2,
-  int32=3,
-  float_=5,
-  char_=7,
-};
-
-class Typed {
-public:
-  Types type;
-  std::uint32_t size;
-  Typed(std::uint8_t byte, igzstream & infile) {
-    type = Types(byte << 4);
-    size = byte >> 4;
-    if (size == 15) {
-      switch (type) {
-        case int8:
-          infile.read(reinterpret_cast<char *>(&size), 1);
-          break;
-        case int16:
-          infile.read(reinterpret_cast<char *>(&size), 2);
-          break;
-        case int32:
-          infile.read(reinterpret_cast<char *>(&size), 4);
-          break;
-        case float_:
-          infile.read(reinterpret_cast<char *>(&size), 4);
-          break;
-        case char_:
-          infile.read(reinterpret_cast<char *>(&size), 1);
-          break;
-      }
-    }
-  }
-  std::int8_t type_size() {
-    if (type == int8) {return 1;}
-    if (type == int16) {return 2;}
-    if (type == int32) {return 4;}
-    if (type == float_) {return 4;}
-    if (type == char_) {return 1;}
-    return 1;
-  }
-};
 
 Variant::Variant(igzstream & infile,  Header & _header) {
   header = _header;
@@ -83,16 +40,16 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   std::uint8_t typing;
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
   Typed type_val = {typing, infile};
-  varid.resize(type_val.size);
-  infile.read(reinterpret_cast<char *>(&varid[0]), type_val.size);
+  varid.resize(type_val.n_vals);
+  infile.read(reinterpret_cast<char *>(&varid[0]), type_val.n_vals);
 
   // get all alleles
   std::string allele;
   for (std::uint32_t i = 0; i < n_alleles; i++) {
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
     type_val = {typing, infile};
-    allele.resize(type_val.size);
-    infile.read(reinterpret_cast<char *>(&allele[0]), type_val.size);
+    allele.resize(type_val.n_vals);
+    infile.read(reinterpret_cast<char *>(&allele[0]), type_val.n_vals);
     if (i == 0) {
       ref = allele;
     } else {
@@ -103,26 +60,15 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   // read the filter fields
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
   type_val = {typing, infile};
-  filters.resize(type_val.size);
+  filters.resize(type_val.n_vals);
   std::uint32_t filter_idx;
-  for (std::uint32_t i = 0; i < type_val.size; i++) {
-    infile.read(reinterpret_cast<char *>(&filter_idx), type_val.type_size());
+  for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
+    infile.read(reinterpret_cast<char *>(&filter_idx), type_val.type_size);
     filters[i] = header.filters[filter_idx].id;
   }
   
   // read the info fields. TODO - find out a way to skip this if not required
-  std::uint32_t info_idx;
-  std::string key;
-  for (std::uint32_t i = 0; i < n_info; i++) {
-    infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
-    type_val = {typing, infile};
-    infile.read(reinterpret_cast<char *>(&info_idx), type_val.type_size());
-    key = header.info[info_idx].id;
-    
-    // now parse value
-    infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
-    type_val = {typing, infile};
-  }
+  Info info = Info(infile, header, n_info);
 }
 
 

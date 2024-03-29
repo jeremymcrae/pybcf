@@ -56,6 +56,7 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   infile.read(reinterpret_cast<char *>(&sampledata_len), sizeof(std::uint32_t));
   infile.read(reinterpret_cast<char *>(&contig_idx), sizeof(std::int32_t));
   infile.read(reinterpret_cast<char *>(&pos), sizeof(std::int32_t));
+  pos += 1; // convert to 1-based coordinate
   infile.read(reinterpret_cast<char *>(&rlen), sizeof(std::int32_t));
   infile.read(reinterpret_cast<char *>(&qual), sizeof(float));
 

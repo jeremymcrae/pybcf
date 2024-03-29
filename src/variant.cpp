@@ -69,22 +69,22 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   
   std::uint32_t n_allele_info;
   infile.read(reinterpret_cast<char *>(&n_allele_info), sizeof(std::uint32_t));
-  n_alleles = n_allele_info << 16;
+  n_alleles = n_allele_info << 16 >> 16;
   n_info = n_allele_info >> 16;
   
   alts.resize(n_alleles - 1);
 
   std::uint32_t n_fmt_sample;
   infile.read(reinterpret_cast<char *>(&n_fmt_sample), sizeof(std::uint32_t));
-  n_fmt = n_fmt_sample << 16;
-  n_sample = n_fmt_sample >> 16;
+  n_fmt = n_fmt_sample << 24 >> 24;
+  n_sample = n_fmt_sample >> 8;
   
   // get variant ID
   std::uint8_t typing;
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
   Typed type_val = {typing, infile};
   varid.resize(type_val.size);
-  infile.read(reinterpret_cast<char *>(&varid), type_val.size);
+  infile.read(reinterpret_cast<char *>(&varid[0]), type_val.size);
 
   // get all alleles
   std::string allele;
@@ -92,7 +92,7 @@ Variant::Variant(igzstream & infile,  Header & _header) {
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
     type_val = {typing, infile};
     allele.resize(type_val.size);
-    infile.read(reinterpret_cast<char *>(&allele), type_val.size);
+    infile.read(reinterpret_cast<char *>(&allele[0]), type_val.size);
     if (i == 0) {
       ref = allele;
     } else {
@@ -103,10 +103,9 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   // read the filter fields
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
   type_val = {typing, infile};
-  std::uint32_t n_filters = type_val.size;
-  filters.resize(n_filters);
+  filters.resize(type_val.size);
   std::uint32_t filter_idx;
-  for (std::uint32_t i = 0; i < n_filters; i++) {
+  for (std::uint32_t i = 0; i < type_val.size; i++) {
     infile.read(reinterpret_cast<char *>(&filter_idx), type_val.type_size());
     filters[i] = header.filters[filter_idx].id;
   }

@@ -8,23 +8,23 @@
 
 namespace bcf {
 
-struct Contig {
+struct ContigField {
   std::string id;
 };
 
-struct Filter {
+struct FilterField {
   std::string id;
   std::string description;
 };
 
-struct Format {
+struct FormatField {
   std::string id;
   std::string number;
   std::string type;
   std::string description;
 };
 
-struct Info {
+struct InfoField {
   std::string id;
   std::string number;
   std::string type;
@@ -38,10 +38,10 @@ class Header {
 public:
   Header(std::string &text);
   Header() {}
-  std::unordered_map<std::uint32_t, Contig> contigs;
-  std::unordered_map<std::uint32_t, Info> info;
-  std::unordered_map<std::uint32_t, Filter> filters;
-  std::unordered_map<std::uint32_t, Format> format;
+  std::unordered_map<std::uint32_t, ContigField> contigs;
+  std::unordered_map<std::uint32_t, InfoField> info;
+  std::unordered_map<std::uint32_t, FilterField> filters;
+  std::unordered_map<std::uint32_t, FormatField> format;
 };
 
 }

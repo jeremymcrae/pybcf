@@ -9,11 +9,10 @@ namespace bcf {
 
 
 BCF::BCF(std::string path) {
-  std::ifstream tmp(path, std::ios::in | std::ios::binary);
-  if (!tmp.is_open()) {
+  infile.open(path.c_str());
+  if (infile.fail()) {
     throw std::invalid_argument("cannot open file at " + path);
   }
-  igzstream infile(path.c_str());
   
   // check the file header indicates this is a bcf file
   char magic[5];

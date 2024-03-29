@@ -87,6 +87,7 @@ ext = cythonize([
             get_gzstream_path(),
             'src/bcf.cpp',
             'src/header.cpp',
+            'src/info.cpp',
             'src/variant.cpp'],
         extra_objects=zlib,
         include_dirs=['src', 'src/zlib'],

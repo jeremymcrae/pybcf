@@ -2,6 +2,7 @@
 #define BCF_VARIANT_H
 
 #include <cstdint>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -32,7 +33,7 @@ public:
   std::int32_t pos=0;
   std::string ref="";
   std::vector<std::string> alts;
-  float qual=float('nan');
+  float qual=std::nanf("1");
   std::string varid="";
   std::vector<std::string> filters;
 };

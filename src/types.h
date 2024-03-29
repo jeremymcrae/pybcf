@@ -8,6 +8,7 @@
 namespace bcf {
 
 enum Types {
+  flag=0,
   int8=1,
   int16=2,
   int32=3,
@@ -34,7 +35,9 @@ public:
     type = Types(byte & 0x0F);
     type_size = type_sizes[type];
     n_vals = byte >> 4;
-    if (n_vals == 15) {
+    if (n_vals == 0) {
+      type = Types(0);
+    } else if (n_vals == 15) {
       infile.read(reinterpret_cast<char *>(&n_vals), type_size);
     }
   }

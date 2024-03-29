@@ -31,7 +31,7 @@ public:
   std::uint8_t type_size=0;
   Typed() {}
   Typed(std::uint8_t byte, igzstream & infile) {
-    type = Types(byte & 0xF);
+    type = Types(byte & 0x0F);
     type_size = type_sizes[type];
     n_vals = byte >> 4;
     if (n_vals == 15) {

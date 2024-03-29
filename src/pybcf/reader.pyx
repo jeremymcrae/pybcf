@@ -25,7 +25,7 @@ cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:
         # declare class constructor and methods
         Variant() except +
-        Variant(igzstream infile, Header header) except +
+        Variant(igzstream & infile, Header & header) except +
         string chrom
         int pos
         string ref

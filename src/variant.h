@@ -32,7 +32,7 @@ public:
   std::int32_t pos=0;
   std::string ref="";
   std::vector<std::string> alts;
-  float qual=0x7f800001;
+  float qual=0;
   std::string varid="";
   std::vector<std::string> filters;
 };

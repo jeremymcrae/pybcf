@@ -58,7 +58,14 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   infile.read(reinterpret_cast<char *>(&pos), sizeof(std::int32_t));
   pos += 1; // convert to 1-based coordinate
   infile.read(reinterpret_cast<char *>(&rlen), sizeof(std::int32_t));
-  infile.read(reinterpret_cast<char *>(&qual), sizeof(float));
+  
+  std::uint32_t bytes;
+  infile.read(reinterpret_cast<char *>(&bytes), sizeof(std::uint32_t));
+  if (bytes == 0x7f800001) {
+    qual = float('nan');
+  } else {
+    qual = (float)bytes;
+  }
 
   chrom = header.contigs[contig_idx].id;
   

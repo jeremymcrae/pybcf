@@ -60,7 +60,6 @@ Header::Header(std::string & text) {
   std::istringstream lines(text);
   std::string line;
   std::unordered_map<std::string, std::string> data;
-  bool is_valid = false;
   while (std::getline(lines, line)) {
     if (line[1] != '#') {
       continue;

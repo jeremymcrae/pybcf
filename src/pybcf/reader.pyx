@@ -10,7 +10,7 @@ cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
         BCF(string path) except +
-        Variant & nextvar()
+        Variant & nextvar() except +
 
 cdef extern from 'gzstream/gzstream.h' namespace 'GZSTREAM_NAMESPACE':
     cdef cppclass igzstream:

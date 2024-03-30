@@ -38,7 +38,10 @@ public:
     if (n_vals == 0) {
       type = Types(0);
     } else if (n_vals == 15) {
-      infile.read(reinterpret_cast<char *>(&n_vals), type_size);
+      infile.read(reinterpret_cast<char *>(&byte), 1);
+      Types next = Types(byte & 0x0F);
+      std::uint8_t next_size = type_sizes[next];
+      infile.read(reinterpret_cast<char *>(&n_vals), next_size);
     }
   }
 };

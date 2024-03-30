@@ -6,8 +6,7 @@
 
 namespace bcf {
 
-Variant::Variant(igzstream & infile,  Header & _header) {
-  header = _header;
+Variant::Variant(igzstream & infile,  Header & header) {
 
   infile.read(reinterpret_cast<char *>(&metadata_len), sizeof(std::uint32_t));
   infile.read(reinterpret_cast<char *>(&sampledata_len), sizeof(std::uint32_t));

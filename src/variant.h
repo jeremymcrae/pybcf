@@ -23,9 +23,8 @@ class Variant {
   std::uint32_t n_info=0;
   std::uint32_t n_fmt=0;
   std::uint32_t n_sample=0;
-  Header header;
 public:
-  Variant(igzstream & infile, Header & _header);
+  Variant(igzstream & infile, Header & header);
   Variant() {};
   float * genotypes();
   

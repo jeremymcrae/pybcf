@@ -26,15 +26,15 @@ Variant::Variant(igzstream & infile,  Header & _header) {
   
   std::uint32_t n_allele_info;
   infile.read(reinterpret_cast<char *>(&n_allele_info), sizeof(std::uint32_t));
-  n_alleles = n_allele_info << 16 >> 16;
-  n_info = n_allele_info >> 16;
+  n_alleles = n_allele_info >> 16;
+  n_info = n_allele_info & 0xffff;
   
   alts.resize(n_alleles - 1);
 
   std::uint32_t n_fmt_sample;
   infile.read(reinterpret_cast<char *>(&n_fmt_sample), sizeof(std::uint32_t));
-  n_fmt = n_fmt_sample << 24 >> 24;
-  n_sample = n_fmt_sample >> 8;
+  n_fmt = n_fmt_sample & 0xffffff;
+  n_sample = n_fmt_sample >> 24;
   
   // get variant ID
   std::uint8_t typing;

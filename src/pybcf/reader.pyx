@@ -10,11 +10,8 @@ cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
         BCF(string path) except +
-        Variant & nextvar() except +
-
-cdef extern from 'gzstream/gzstream.h' namespace 'GZSTREAM_NAMESPACE':
-    cdef cppclass igzstream:
-        igzstream(const char* path) except +
+        BCF() except +
+        Variant nextvar() except +
 
 cdef extern from 'header.h' namespace 'bcf':
     cdef cppclass Header:
@@ -25,7 +22,6 @@ cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:
         # declare class constructor and methods
         Variant() except +
-        Variant(igzstream & infile, Header & header) except +
         string chrom
         int pos
         string ref
@@ -35,9 +31,9 @@ cdef extern from 'variant.h' namespace 'bcf':
         vector[string] filters
 
 cdef class BcfVariant:
-    cdef Variant * thisptr
-    cdef _set_variant(self, Variant * ptr):
-        self.thisptr = ptr
+    cdef Variant thisptr
+    def __cinit__(self, BcfReader bcf):
+        self.thisptr = bcf.thisptr.nextvar()
     
     @property
     def chrom(self):
@@ -71,10 +67,7 @@ cdef class BcfReader:
     def __next__(self):
         ''' iterate through all variants in the bcf file
         '''
-        cdef Variant var = self.thisptr.nextvar()
-        pyvar = BcfVariant()
-        pyvar._set_variant(&var)
-        return pyvar
+        return BcfVariant(self)
     
     @property
     def header(self):

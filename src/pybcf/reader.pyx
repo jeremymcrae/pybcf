@@ -71,7 +71,10 @@ cdef class BcfReader:
     def __next__(self):
         ''' iterate through all variants in the bcf file
         '''
-        return BcfVariant(self)
+        try:
+            return BcfVariant(self)
+        except IndexError:
+            raise StopIteration
     
     @property
     def header(self):

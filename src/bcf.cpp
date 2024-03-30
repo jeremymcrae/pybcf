@@ -29,6 +29,9 @@ BCF::BCF(std::string path) {
 }
 
 Variant BCF::nextvar() {
+  if (infile.eof()) {
+    throw std::out_of_range("end of file");
+  }
   return Variant(infile, header);
 }
 

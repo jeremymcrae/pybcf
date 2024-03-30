@@ -35,6 +35,7 @@ public:
   float qual=std::nanf("1");
   std::string varid="";
   std::vector<std::string> filters;
+  Info info;
 };
 
 }

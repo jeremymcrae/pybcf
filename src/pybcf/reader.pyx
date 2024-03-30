@@ -38,6 +38,10 @@ cdef class BcfVariant:
     @property
     def chrom(self):
         return self.thisptr.chrom.decode('utf8')
+    
+    @property
+    def pos(self):
+        return self.thisptr.pos
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within

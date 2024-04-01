@@ -6,19 +6,19 @@
 
 namespace bcf {
 
-std::int64_t get_int(igzstream & infile, std::uint8_t size) {
+static std::int64_t get_int(igzstream & infile, std::uint8_t size) {
   std::int64_t val=0;
   infile.read(reinterpret_cast<char *>(&val), size);
   return val;
 }
 
-float get_float(igzstream & infile) {
+static float get_float(igzstream & infile) {
   float val;
   infile.read(reinterpret_cast<char *>(&val), 4);
   return val;
 }
 
-std::string get_string(igzstream & infile, std::uint32_t size) {
+static std::string get_string(igzstream & infile, std::uint32_t size) {
   std::string val(size, ' ');
   infile.read(reinterpret_cast<char *>(&val[0]), size);
   return val;
@@ -44,7 +44,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     infile.read(reinterpret_cast<char *>(&info_idx), type_val.type_size);
     key = header.info[info_idx].id;
 
-    std::cout << "info key: " << key << std::endl;
+    // std::cout << "info key: " << key << std::endl;
 
     // now parse the value
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
@@ -104,6 +104,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           break;
         case float_:
           f_val = get_float(infile);
+          // std::cout << "value (float): " << f_val << std::endl;
           if (type_val.n_vals == 1) {
             scalar_floats.push_back(f_val);
           } else {
@@ -112,6 +113,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           break;
         case char_:
           s_val = get_string(infile, type_val.n_vals);
+          // std::cout << "value (string): " << s_val << std::endl;
           if (type_val.n_vals == 1) {
             scalar_strings.push_back(s_val);
           } else {
@@ -120,6 +122,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           break;
         default:
           i_val = get_int(infile, type_val.type_size);
+          // std::cout << "value (int): " << i_val << std::endl;
           if (type_val.n_vals == 1) {
             scalar_ints.push_back(i_val);
           } else {

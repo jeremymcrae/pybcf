@@ -88,6 +88,7 @@ ext = cythonize([
             'src/bcf.cpp',
             'src/header.cpp',
             'src/info.cpp',
+            'src/format.cpp',
             'src/variant.cpp'],
         extra_objects=zlib,
         include_dirs=['src', 'src/zlib'],

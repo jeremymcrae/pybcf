@@ -10,6 +10,8 @@
 #include "gzstream/gzstream.h"
 
 #include "header.h"
+#include "info.h"
+#include "format.h"
 
 namespace bcf {
 
@@ -23,11 +25,9 @@ class Variant {
   std::uint32_t n_info=0;
   std::uint32_t n_fmt=0;
   std::uint32_t n_sample=0;
-  char * buf={};
 public:
   Variant(igzstream & infile, Header & header);
   Variant() {};
-  ~Variant() {delete[] buf;};
   float * genotypes();
   
   std::string chrom="";
@@ -38,6 +38,7 @@ public:
   std::string varid="";
   std::vector<std::string> filters;
   Info info;
+  Format format;
 };
 
 }

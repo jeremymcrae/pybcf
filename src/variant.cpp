@@ -2,6 +2,7 @@
 
 #include "variant.h"
 #include "info.h"
+#include "format.h"
 #include "types.h"
 
 namespace bcf {
@@ -68,10 +69,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   
   // read the info fields. TODO - find out a way to skip this if not required
   info = Info(infile, header, n_info);
-
-  // read the sample data into a buffer, but don't parse until required
-  buf = new char[sampledata_len];
-  infile.read(reinterpret_cast<char *>(&buf[0]), sampledata_len);
+  format = Format(infile, header, sampledata_len, n_fmt);
 }
 
 

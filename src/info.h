@@ -28,11 +28,10 @@ public:
   // one of "Integer, Float, Flag, Character, and String"
   std::vector<float> scalar_floats;                      // type 0
   std::vector<std::int64_t> scalar_ints;                 // type 1
-  std::vector<std::string> scalar_strings;               // type 2
+  std::vector<std::string> strings;                      // type 2
   
   std::vector<std::vector<float>> vector_floats;         // type 3
   std::vector<std::vector<std::int64_t>> vector_ints;    // type 4
-  std::vector<std::vector<std::string>> vector_strings;  // type 5
 };
 
 } // namespace

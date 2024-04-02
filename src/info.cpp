@@ -1,5 +1,6 @@
 
 #include <iostream>
+#include <bitset>
 
 #include "info.h"
 #include "types.h"
@@ -46,7 +47,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     infile.read(reinterpret_cast<char *>(&id_idx), type_val.type_size);
     key = header.info[id_idx].id;
 
-    // std::cout << "info key: " << key << std::endl;
+    // std::cout << "info idx: " << id_idx << ", info key: " << key << "(" << std::bitset<8>(typing) << ")" << std::endl;
 
     // now parse the value
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
@@ -82,12 +83,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           vector_floats.push_back({});
         }
       } else if (type_val.type == char_) {
-        if (type_val.n_vals == 1) {
-          idx = scalar_strings.size();
-        } else {
-          idx = vector_strings.size();
-          vector_strings.push_back({});
-        }
+        idx = strings.size();
       } else {
         if (type_val.n_vals == 1) {
           idx = scalar_ints.size();
@@ -102,11 +98,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     
     if (type_val.type == char_) {
       s_val = get_string(infile, type_val.n_vals);
-      if (type_val.n_vals == 1) {
-        scalar_strings.push_back(s_val);
-      } else {
-        vector_strings[idx].push_back(s_val);
-      }
+      strings.push_back(s_val);
     } else {
       for (std::uint32_t i=0; i < type_val.n_vals; i++) {
         switch(type_val.type) {
@@ -131,7 +123,6 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
         }
       }
     }
-    
   }
 }
 

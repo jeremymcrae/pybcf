@@ -33,9 +33,9 @@ Variant::Variant(igzstream & infile,  Header & header) {
 
   std::uint32_t n_fmt_sample;
   infile.read(reinterpret_cast<char *>(&n_fmt_sample), sizeof(std::uint32_t));
-  n_fmt = n_fmt_sample & 0xffffff;
-  n_sample = n_fmt_sample >> 24;
-  
+  n_sample = n_fmt_sample & 0xffffff;
+  n_fmt = n_fmt_sample >> 24;
+
   // get variant ID
   std::uint8_t typing;
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));

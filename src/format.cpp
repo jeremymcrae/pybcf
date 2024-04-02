@@ -60,35 +60,53 @@ Format::Format(igzstream & infile, Header & _header, std::uint32_t len, std::uin
   }
 }
 
-void Format::parse(std::string & key) {
+FormatType Format::get_type(std::string &key) {
   if (keys.count(key) == 0) {
     throw std::invalid_argument("no entries for " + key + " in data");
   }
-  
-  FormatType type = keys[key];
-  std::uint32_t idx = type.offset;
-  if ((type.type == int8) || (type.type == int16) || (type.type == int32)) {
-    std::vector<std::int32_t> vals;
-    vals.resize(type.len);
-    for (std::uint32_t i = 0; i < type.len; i++) {
-      vals[i] = get_int(buf, idx, type.size);
-    }
-  } else if (type.type == float_) {
-    std::vector<float> vals;
-    vals.resize(type.len);
-    for (std::uint32_t i = 0; i < type.len; i++) {
-      vals[i] = get_int(buf, idx, type.size);
-    }
-  } else {
-    std::vector<std::string> vals;
-    // FIXME: this isn't right, needs to account for the number of characters
-    // FIXME: in each vector, rather than char size
-    vals.resize(type.len);
-    for (std::uint32_t i = 0; i < type.len; i++) {
-      vals[i] = get_string(buf, idx, type.size);
-    }
-  }
+  return keys[key];
 }
 
+std::vector<std::int32_t> Format::get_ints(FormatType & type) {
+  std::vector<std::int32_t> vals;
+  vals.resize(type.len * n_samples);
+  std::uint32_t offset = type.offset;
+  std::uint32_t idx=0;
+  for (std::uint32_t n=0; n < n_samples; n++) {
+    for (std::uint32_t i = 0; i < type.len; i++) {
+      vals[idx] = get_int(buf, offset, type.size);
+      idx++;
+    }
+  }
+  return vals;
+}
+
+std::vector<float> Format::get_floats(FormatType & type) {
+  std::vector<float> vals;
+  vals.resize(type.len * n_samples);
+  std::uint32_t offset = type.offset;
+  std::uint32_t idx=0;
+  for (std::uint32_t n=0; n < n_samples; n++) {
+    for (std::uint32_t i = 0; i < type.len; i++) {
+      vals[idx] = get_float(buf, offset);
+      idx++;
+    }
+  }
+  return vals;
+}
+
+std::vector<std::string> Format::get_strings(FormatType & type) {
+  std::vector<std::string> vals;
+  vals.resize(type.len * n_samples);
+  std::uint32_t offset = type.offset;
+  std::uint32_t idx=0;
+  for (std::uint32_t n=0; n < n_samples; n++) {
+    for (std::uint32_t i = 0; i < type.len; i++) {
+      vals[idx] = get_string(buf, offset, type.size);
+      idx++;
+    }
+  }
+  return vals;
+}
 
 }

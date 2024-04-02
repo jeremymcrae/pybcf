@@ -31,18 +31,10 @@ public:
   // ~Format() {
   //   delete[] buf;
   // };
-  void parse(std::string & key);
-
-  // bool get(std::string key);
-
-  // keep a number of data stores, for the different value types, which can be
-  // one of "Integer, Float, Flag, Character, and String"
-  std::vector<float> scalar_floats;                      // type 0
-  std::vector<std::int64_t> scalar_ints;                 // type 1
-  std::vector<std::string> strings;                     // type 2
-  
-  std::vector<std::vector<float>> vector_floats;         // type 3
-  std::vector<std::vector<std::int64_t>> vector_ints;    // type 4
+  FormatType get_type(std::string &key);
+  std::vector<std::int32_t> get_ints(FormatType & type);
+  std::vector<float> get_floats(FormatType & type);
+  std::vector<std::string> get_strings(FormatType & type);
 };
 
 } // namespace

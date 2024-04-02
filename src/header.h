@@ -35,6 +35,7 @@ class Header {
   std::unordered_set<std::string> valid = {"contig", "INFO", "FILTER", "FORMAT"};
   std::uint32_t idx=0;
   std::uint32_t contig_idx=0;
+  bool has_idx_tag=false;
 public:
   Header(std::string &text);
   Header() {}

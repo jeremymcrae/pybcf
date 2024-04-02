@@ -74,6 +74,15 @@ Header::Header(std::string & text) {
         }
         
         data = parse_delimited(remainder);
+
+        // use the IDX field for the map key, if IDX was included
+        if (has_idx_tag && data.count("IDX") == 0) {
+          throw std::invalid_argument("invalid BCF - missing IDX field in " + data["ID"]);
+        }
+        if (data.count("IDX") > 0) {
+          idx = std::stoi(data["IDX"]);
+        }
+
         if (id == "contig") {
           contigs[contig_idx] = {data["ID"]};
           contig_idx += 1;

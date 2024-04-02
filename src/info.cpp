@@ -30,6 +30,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
   Typed type_val;
 
   // read the info fields. TODO - find out a way to skip this if not required
+  std::uint32_t id_idx;
   std::int8_t info_idx;
   std::uint32_t idx;
   std::string key;
@@ -41,8 +42,9 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
   for (std::uint32_t i = 0; i < n_info; i++) {
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
     type_val = {typing, infile};
-    infile.read(reinterpret_cast<char *>(&info_idx), type_val.type_size);
-    key = header.info[info_idx].id;
+    id_idx = 0;
+    infile.read(reinterpret_cast<char *>(&id_idx), type_val.type_size);
+    key = header.info[id_idx].id;
 
     // std::cout << "info key: " << key << std::endl;
 
@@ -98,39 +100,38 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     
     keys[key] = {info_idx, idx};
     
-    for (std::uint32_t i=0; i < type_val.n_vals; i++) {
-      switch(type_val.type) {
-        case flag:
-          break;
-        case float_:
-          f_val = get_float(infile);
-          // std::cout << "value (float): " << f_val << std::endl;
-          if (type_val.n_vals == 1) {
-            scalar_floats.push_back(f_val);
-          } else {
-            vector_floats[idx].push_back(f_val);
-          }
-          break;
-        case char_:
-          s_val = get_string(infile, type_val.n_vals);
-          // std::cout << "value (string): " << s_val << std::endl;
-          if (type_val.n_vals == 1) {
-            scalar_strings.push_back(s_val);
-          } else {
-            vector_strings[idx].push_back(s_val);
-          }
-          break;
-        default:
-          i_val = get_int(infile, type_val.type_size);
-          // std::cout << "value (int): " << i_val << std::endl;
-          if (type_val.n_vals == 1) {
-            scalar_ints.push_back(i_val);
-          } else {
-            vector_ints[idx].push_back(i_val);
-          }
-          break;
+    if (type_val.type == char_) {
+      s_val = get_string(infile, type_val.n_vals);
+      if (type_val.n_vals == 1) {
+        scalar_strings.push_back(s_val);
+      } else {
+        vector_strings[idx].push_back(s_val);
+      }
+    } else {
+      for (std::uint32_t i=0; i < type_val.n_vals; i++) {
+        switch(type_val.type) {
+          case flag:
+            break;
+          case float_:
+            f_val = get_float(infile);
+            if (type_val.n_vals == 1) {
+              scalar_floats.push_back(f_val);
+            } else {
+              vector_floats[idx].push_back(f_val);
+            }
+            break;
+          default:
+            i_val = get_int(infile, type_val.type_size);
+            if (type_val.n_vals == 1) {
+              scalar_ints.push_back(i_val);
+            } else {
+              vector_ints[idx].push_back(i_val);
+            }
+            break;
+        }
       }
     }
+    
   }
 }
 

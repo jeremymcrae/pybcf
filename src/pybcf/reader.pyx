@@ -42,6 +42,22 @@ cdef class BcfVariant:
     @property
     def pos(self):
         return self.thisptr.pos
+    
+    @property
+    def ref(self):
+        return self.thisptr.ref.decode('utf8')
+    
+    @property
+    def alts(self):
+        return [x.decode('utf8') for x in self.thisptr.alts]
+    
+    @property
+    def qual(self):
+        return self.thisptr.qual
+    
+    @property
+    def filters(self):
+        return [x.decode('utf8') for x in self.thisptr.filters]
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within

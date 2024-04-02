@@ -19,7 +19,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   std::uint32_t bytes;
   infile.read(reinterpret_cast<char *>(&bytes), sizeof(std::uint32_t));
   if (bytes != 0x7f800001) {
-    qual = (float) bytes;
+    qual = *reinterpret_cast<float *>(&bytes);
   }
 
   chrom = header.contigs[contig_idx].id;

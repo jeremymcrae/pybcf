@@ -63,6 +63,9 @@ Header::Header(std::string & text) {
   while (std::getline(lines, line)) {
     if (line[1] != '#') {
       if (line.substr(0, 6).find("CHROM") != std::string::npos) {
+        if (samples.size() > 0) {
+          throw std::invalid_argument("BCF has two header lines starting with #CHROM!");
+        }
         // parse the sample IDs
         std::string item = "FORMAT\t";
         std::uint32_t i = line.find(item);

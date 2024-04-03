@@ -19,14 +19,14 @@ struct FormatType {
   std::uint32_t n_vals;    // number of entries
 };
 
-class Format {
-  // for each info record, track which type it is, and some index value
+class SampleData {
+  // for each format record, track which type it is, and some index value
   std::unordered_map<std::string, FormatType> keys;
   char * buf={};
   Header * header;
 public:
-  Format(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
-  Format() {};
+  SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
+  SampleData(){};
   // ~Format() {
   //   delete[] buf;
   // };

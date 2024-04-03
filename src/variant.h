@@ -38,7 +38,7 @@ public:
   std::string varid="";
   std::vector<std::string> filters;
   Info info;
-  Format format;
+  SampleData sample_data;
 };
 
 }

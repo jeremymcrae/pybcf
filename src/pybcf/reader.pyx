@@ -33,9 +33,9 @@ cdef extern from 'format.h' namespace 'bcf':
         uint32_t offset
         uint32_t n_vals
     
-    cdef cppclass Format:
+    cdef cppclass SampleData:
         # declare class constructor and methods
-        Format() except +
+        SampleData() except +
         FormatType get_type(string)
         vector[int32_t] get_ints(FormatType)
         vector[float] get_floats(FormatType)
@@ -54,12 +54,12 @@ cdef extern from 'variant.h' namespace 'bcf':
         string varid
         vector[string] filters
         Info info
-        Format format
+        SampleData sample_data
 
-cdef class BcfFormat:
-    cdef Format * thisptr
-    cdef set_data(self, Format * fmt):
-        ''' assigns Format to python class '''
+cdef class BcfSampleData:
+    cdef SampleData * thisptr
+    cdef set_data(self, SampleData * fmt):
+        ''' assigns SampleData to python class '''
         self.thisptr = fmt
     def __getitem__(self, _key):
         cdef string key = _key.encode('utf8')
@@ -83,13 +83,13 @@ cdef class BcfFormat:
 
 cdef class BcfVariant:
     cdef Variant thisptr
-    cdef BcfFormat _format
+    cdef BcfSampleData _samples
     def __cinit__(self, BcfReader bcf):
         self.thisptr = bcf.thisptr.nextvar()
         
         # set the _format attribute
-        self._format = BcfFormat()
-        self._format.set_data(&self.thisptr.format)
+        self._samples = BcfSampleData()
+        self._samples.set_data(&self.thisptr.sample_data)
     
     @property
     def chrom(self):
@@ -116,8 +116,8 @@ cdef class BcfVariant:
         return [x.decode('utf8') for x in self.thisptr.filters]
     
     @property
-    def format(self):
-        return self._format
+    def samples(self):
+        return self._samples
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within

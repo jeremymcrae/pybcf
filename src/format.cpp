@@ -33,7 +33,7 @@ static std::string get_string(const char * buf, std::uint32_t & idx, std::uint32
   return val;
 }
 
-Format::Format(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
+SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
   n_samples = _n_samples;
   header = &_header;
   if (len == 0) {
@@ -60,14 +60,14 @@ Format::Format(igzstream & infile, Header & _header, std::uint32_t len, std::uin
   }
 }
 
-FormatType Format::get_type(std::string &key) {
+FormatType SampleData::get_type(std::string &key) {
   if (keys.count(key) == 0) {
     throw std::invalid_argument("no entries for " + key + " in data");
   }
   return keys[key];
 }
 
-std::vector<std::int32_t> Format::get_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
@@ -81,7 +81,7 @@ std::vector<std::int32_t> Format::get_ints(FormatType & type) {
   return vals;
 }
 
-std::vector<float> Format::get_floats(FormatType & type) {
+std::vector<float> SampleData::get_floats(FormatType & type) {
   std::vector<float> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
@@ -95,7 +95,7 @@ std::vector<float> Format::get_floats(FormatType & type) {
   return vals;
 }
 
-std::vector<std::string> Format::get_strings(FormatType & type) {
+std::vector<std::string> SampleData::get_strings(FormatType & type) {
   std::vector<std::string> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;

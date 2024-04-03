@@ -69,7 +69,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   
   // read the info fields. TODO - find out a way to skip this if not required
   info = Info(infile, header, n_info);
-  format = Format(infile, header, sampledata_len, n_fmt, n_sample);
+  sample_data = SampleData(infile, header, sampledata_len, n_fmt, n_sample);
 }
 
 

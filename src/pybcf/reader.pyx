@@ -140,7 +140,7 @@ cdef class BcfSampleData:
                 arr = np.reshape(arr, (-1, n_per_sample))
             return arr.copy()
         elif fmt_type.data_type == 5:
-            v_float = self.thisptr.get_ints(fmt_type)
+            v_float = self.thisptr.get_floats(fmt_type)
             arr = np.asarray(<float [:n_vals]>&v_float[0])
             if n_per_sample > 1:
                 arr = np.reshape(arr, (-1, n_per_sample))

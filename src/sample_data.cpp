@@ -44,6 +44,7 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
     return;
   }
   phase.resize(n_samples);
+  missing.resize(n_samples);
   
   // read the sample data into a buffer, but don't parse until required
   // buf = new char[len];
@@ -91,6 +92,10 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
       if (type.is_geno) {
         phase[n] = vals[idx] & 0x00000001;
         vals[idx] = (vals[idx] >> 1) - 1;
+        // this only checks on genotype status, but this should apply to other
+        // fields too (AD, DP etc), as if a sample lacks gt, other fields 
+        // should also be absent
+        missing[n] = vals[idx] == -1;
       }
       idx++;
     }

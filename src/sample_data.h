@@ -37,6 +37,7 @@ public:
   std::uint32_t n_samples=0;
   bool phase_checked=false;
   std::vector<std::uint8_t> phase;
+  std::vector<std::uint8_t> missing;
 };
 
 } // namespace

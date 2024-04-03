@@ -57,6 +57,7 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         uint32_t n_samples
         bool phase_checked
         vector[uint8_t] phase
+        vector[uint8_t] missing
 
 cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:
@@ -154,13 +155,21 @@ cdef class BcfSampleData:
         raise ValueError(f'unknown datatype: {fmt_type}')
     
     @property
+    def missing(self):
+        ''' get indices of samples with missing genotype data'''
+        if not self.thisptr.phase_checked:
+            self['GT']
+        
+        arr = np.asarray(<uint8_t [:self.thisptr.missing.size()]>&self.thisptr.missing[0])
+        return arr.astype(np.bool_)
+    
+    @property
     def phased(self):
         ''' determine whether genotypes are phased '''
         if not self.thisptr.phase_checked:
             self['GT']
         
-        cdef vector[uint8_t] v = self.thisptr.phase
-        arr = np.asarray(<uint8_t [:self.thisptr.n_samples]>&v[0])
+        arr = np.asarray(<uint8_t [:self.thisptr.phase.size()]>&self.thisptr.phase[0])
         return arr.astype(np.bool_)
 
 cdef class BcfVariant:

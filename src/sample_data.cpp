@@ -85,7 +85,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
       vals[idx] = get_int(&buf[0], offset, type.type_size);
       if (type.is_geno) {
         phased[n] = vals[idx] & 0x00000001;
-        vals[idx] = vals[idx] >> 1;
+        vals[idx] = (vals[idx] >> 1) - 1;
       }
       idx++;
     }

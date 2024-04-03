@@ -9,9 +9,11 @@ namespace bcf {
 static std::int32_t get_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val=0;
   if (type_size == 1) {
-    val = *reinterpret_cast<std::int8_t *>(&buf[idx]);
+    val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
+    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
   } else if (type_size == 2) {
-    val = *reinterpret_cast<std::int16_t *>(&buf[idx]);
+    val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
+    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
   } else {
     val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
   }

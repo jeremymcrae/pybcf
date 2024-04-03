@@ -72,7 +72,19 @@ cdef class BcfInfo:
     cdef set_data(self, Info * info):
         ''' assigns Info to python class '''
         self.thisptr = info
+    
+    def __contains__(self, key):
+        ''' check if key in Info ''''
+        try:
+            self.thisptr.get_type(key.encode('utf8'))
+            return True
+        except ValueError:
+            return False
+    
     def __getitem__(self, _key):
+        if not self.__contains__(_key):
+            raise KeyError(_key)
+        
         cdef string key = _key.encode('utf8')
         cdef InfoType info_type = self.thisptr.get_type(key)
         
@@ -95,7 +107,19 @@ cdef class BcfSampleData:
     cdef set_data(self, SampleData * data):
         ''' assigns SampleData to python class '''
         self.thisptr = data
+    
+    def __contains__(self, key):
+        ''' check if key in SampleData ''''
+        try:
+            self.thisptr.get_type(key.encode('utf8'))
+            return True
+        except ValueError:
+            return False
+    
     def __getitem__(self, _key):
+        if not self.__contains__(_key):
+            raise KeyError(_key)
+        
         cdef string key = _key.encode('utf8')
         
         cdef FormatType fmt_type = self.thisptr.get_type(key)

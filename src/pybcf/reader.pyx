@@ -45,12 +45,13 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         uint8_t type_size
         uint32_t offset
         uint32_t n_vals
+        bool is_geno
     
     cdef cppclass SampleData:
         # declare class constructor and methods
         SampleData() except +
         FormatType get_type(string &) except +
-        vector[int32_t] get_ints(FormatType &, bool geno=False)
+        vector[int32_t] get_ints(FormatType &)
         vector[float] get_floats(FormatType &)
         vector[string] get_strings(FormatType &)
         uint32_t n_samples

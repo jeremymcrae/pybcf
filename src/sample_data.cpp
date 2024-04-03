@@ -49,13 +49,16 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   std::uint32_t format_idx=0;
   std::string key;
   Typed type_val;
+  bool is_geno;
   for (std::uint32_t i = 0; i < n_fmt; i++ ){
     type_val = {buf, buf_idx};
     format_idx = get_int(buf, buf_idx, type_val.type_size);
     key = header->format[format_idx].id;
+    is_geno = key == "GT";
 
     type_val = {buf, buf_idx};
-    keys[key] = {(std::uint8_t) type_val.type, type_val.type_size, buf_idx, type_val.n_vals};
+    keys[key] = {(std::uint8_t) type_val.type, type_val.type_size, buf_idx, 
+                 type_val.n_vals, is_geno};
     buf_idx += (type_val.n_vals * type_val.type_size * n_samples);
   }
 }
@@ -67,7 +70,7 @@ FormatType SampleData::get_type(std::string &key) {
   return keys[key];
 }
 
-std::vector<std::int32_t> SampleData::get_ints(FormatType & type, bool geno) {
+std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;

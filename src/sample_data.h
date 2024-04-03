@@ -17,6 +17,7 @@ struct FormatType {
   std::uint8_t type_size;  // size of individual data entries
   std::uint32_t offset;    // where the data starts in the buffer
   std::uint32_t n_vals;    // number of entries
+  bool is_geno;
 };
 
 class SampleData {
@@ -31,7 +32,7 @@ public:
   //   delete[] buf;
   // };
   FormatType get_type(std::string &key);
-  std::vector<std::int32_t> get_ints(FormatType & type, bool geno=false);
+  std::vector<std::int32_t> get_ints(FormatType & type);
   std::vector<float> get_floats(FormatType & type);
   std::vector<std::string> get_strings(FormatType & type);
 

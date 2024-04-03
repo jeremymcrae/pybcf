@@ -1,9 +1,6 @@
 
 
 #include "variant.h"
-#include "info.h"
-#include "format.h"
-#include "types.h"
 
 namespace bcf {
 

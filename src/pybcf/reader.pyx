@@ -3,8 +3,11 @@ import logging
 from pathlib import Path
 
 from libcpp cimport bool
+from libc.stdint cimport uint8_t, uint32_t, int32_t
 from libcpp.string cimport string
 from libcpp.vector cimport vector
+
+import numpy as np
 
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
@@ -17,7 +20,28 @@ cdef extern from 'header.h' namespace 'bcf':
     cdef cppclass Header:
         # declare class constructor and methods
         Header(string text) except +
-        
+
+cdef extern from 'info.h' namespace 'bcf':
+    cdef cppclass Info:
+        # declare class constructor and methods
+        Info() except +
+
+cdef extern from 'format.h' namespace 'bcf':
+    cdef struct FormatType:
+        uint8_t data_type
+        uint8_t type_size
+        uint32_t offset
+        uint32_t n_vals
+    
+    cdef cppclass Format:
+        # declare class constructor and methods
+        Format() except +
+        FormatType get_type(string)
+        vector[int32_t] get_ints(FormatType)
+        vector[float] get_floats(FormatType)
+        vector[string] get_strings(FormatType)
+        uint32_t n_samples
+
 cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:
         # declare class constructor and methods
@@ -29,11 +53,43 @@ cdef extern from 'variant.h' namespace 'bcf':
         float qual
         string varid
         vector[string] filters
+        Info info
+        Format format
+
+cdef class BcfFormat:
+    cdef Format * thisptr
+    cdef set_data(self, Format * fmt):
+        ''' assigns Format to python class '''
+        self.thisptr = fmt
+    def __getitem__(self, _key):
+        cdef string key = _key.encode('utf8')
+        
+        cdef FormatType fmt_type = self.thisptr.get_type(key)
+        cdef uint32_t n_per_sample = fmt_type.n_vals
+        cdef uint32_t n_samples = self.thisptr.n_samples
+        cdef uint32_t n_vals = n_per_sample * n_samples
+        
+        if fmt_type.data_type == 1 or fmt_type.data_type == 2 or fmt_type.data_type == 3:
+            # integer types
+            return self.thisptr.get_ints(fmt_type)
+        elif fmt_type.data_type == 5:
+            # float type
+            return self.thisptr.get_floats(fmt_type)
+        elif fmt_type.data_type == 7:
+            # string type
+            return self.thisptr.get_strings(fmt_type)
+        
+        raise ValueError(f'unknown datatype: {fmt_type}')
 
 cdef class BcfVariant:
     cdef Variant thisptr
+    cdef BcfFormat _format
     def __cinit__(self, BcfReader bcf):
         self.thisptr = bcf.thisptr.nextvar()
+        
+        # set the _format attribute
+        self._format = BcfFormat()
+        self._format.set_data(&self.thisptr.format)
     
     @property
     def chrom(self):
@@ -58,6 +114,10 @@ cdef class BcfVariant:
     @property
     def filters(self):
         return [x.decode('utf8') for x in self.thisptr.filters]
+    
+    @property
+    def format(self):
+        return self._format
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within

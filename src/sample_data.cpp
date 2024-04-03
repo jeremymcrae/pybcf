@@ -1,5 +1,6 @@
 
 #include <iostream>
+
 #include <cstring>
 
 #include "sample_data.h"
@@ -42,7 +43,7 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   if (len == 0) {
     return;
   }
-  phased.resize(n_samples);
+  phase.resize(n_samples);
   
   // read the sample data into a buffer, but don't parse until required
   // buf = new char[len];
@@ -76,6 +77,10 @@ FormatType SampleData::get_type(std::string &key) {
 }
 
 std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
+  if (type.is_geno) {
+    // confirm we checked sample phasing if we look at the genotype data
+    phase_checked = true;
+  }
   std::vector<std::int32_t> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
@@ -84,7 +89,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = get_int(&buf[0], offset, type.type_size);
       if (type.is_geno) {
-        phased[n] = vals[idx] & 0x00000001;
+        phase[n] = vals[idx] & 0x00000001;
         vals[idx] = (vals[idx] >> 1) - 1;
       }
       idx++;

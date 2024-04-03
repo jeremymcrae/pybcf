@@ -26,7 +26,6 @@ class SampleData {
   std::unordered_map<std::string, FormatType> keys;
   std::vector<char> buf;
   Header * header;
-  bool started=false;
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};
@@ -36,7 +35,8 @@ public:
   std::vector<std::string> get_strings(FormatType & type);
 
   std::uint32_t n_samples=0;
-  std::vector<bool> phased;
+  bool phase_checked=false;
+  std::vector<std::uint8_t> phase;
 };
 
 } // namespace

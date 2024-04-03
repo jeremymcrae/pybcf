@@ -37,7 +37,7 @@ cdef extern from 'format.h' namespace 'bcf':
         # declare class constructor and methods
         SampleData() except +
         FormatType get_type(string)
-        vector[int32_t] get_ints(FormatType)
+        vector[int32_t] get_ints(FormatType, bool geno=False)
         vector[float] get_floats(FormatType)
         vector[string] get_strings(FormatType)
         uint32_t n_samples

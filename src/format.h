@@ -31,7 +31,7 @@ public:
   //   delete[] buf;
   // };
   FormatType get_type(std::string &key);
-  std::vector<std::int32_t> get_ints(FormatType & type);
+  std::vector<std::int32_t> get_ints(FormatType & type, bool geno=false);
   std::vector<float> get_floats(FormatType & type);
   std::vector<std::string> get_strings(FormatType & type);
 

@@ -67,7 +67,7 @@ FormatType SampleData::get_type(std::string &key) {
   return keys[key];
 }
 
-std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::get_ints(FormatType & type, bool geno) {
   std::vector<std::int32_t> vals;
   vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;

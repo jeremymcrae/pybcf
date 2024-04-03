@@ -43,6 +43,7 @@ public:
   std::unordered_map<std::uint32_t, InfoField> info;
   std::unordered_map<std::uint32_t, FilterField> filters;
   std::unordered_map<std::uint32_t, FormatField> format;
+  std::vector<std::string> samples={};
 };
 
 }

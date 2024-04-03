@@ -15,11 +15,13 @@ cdef extern from 'bcf.h' namespace 'bcf':
         BCF(string path) except +
         BCF() except +
         Variant nextvar() except +
+        Header header
 
 cdef extern from 'header.h' namespace 'bcf':
     cdef cppclass Header:
         # declare class constructor and methods
         Header(string text) except +
+        vector[string] samples
 
 cdef extern from 'info.h' namespace 'bcf':
     cdef struct InfoType:
@@ -191,7 +193,8 @@ cdef class BcfReader:
     '''
     cdef BCF * thisptr
     cdef string path
-    cdef bool is_open
+    cdef bool is_open, samples_ready
+    cdef list _samples
     def __cinit__(self, path):
         path = str(path) if isinstance(path, Path) else path
         self.path = path.encode('utf8')
@@ -229,7 +232,11 @@ cdef class BcfReader:
     def samples(self):
       ''' get list of samples in the bcf file
       '''
-      raise NotImplementedError
+      if not self.samples_ready:
+        _samples = [x.decode('utf8') for x in self.thisptr.header.samples]
+        self.samples_ready = True
+    
+      return _samples
     
     def fetch(self, chrom, start=None, stop=None):
         ''' fetches all variants within a genomic region

@@ -62,7 +62,18 @@ Header::Header(std::string & text) {
   std::unordered_map<std::string, std::string> data;
   while (std::getline(lines, line)) {
     if (line[1] != '#') {
-      continue;
+      if (line.substr(0, 6).find("CHROM") != std::string::npos) {
+        // parse the sample IDs
+        std::string item = "FORMAT\t";
+        std::uint32_t i = line.find(item);
+        if (i != std::string::npos) {
+          line = line.substr(i + item.size(), line.size());
+          std::istringstream iss(line);
+          while (std::getline(iss, item, '\t')) {
+            samples.push_back(item);
+          }
+        }
+      }
     } else {
       std::vector<std::string> parsed = split_line(line);
       if (parsed.size() == 2) {

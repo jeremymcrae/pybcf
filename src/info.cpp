@@ -47,8 +47,6 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     infile.read(reinterpret_cast<char *>(&id_idx), type_val.type_size);
     key = header.info[id_idx].id;
 
-    // std::cout << "info idx: " << id_idx << ", info key: " << key << "(" << std::bitset<8>(typing) << ")" << std::endl;
-
     // now parse the value
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
     type_val = {typing, infile};
@@ -71,7 +69,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     }
     
     if (type_val.type != flag) {
-      if (type_val.n_vals > 1) {
+      if ((type_val.n_vals > 1) && (type_val.type != char_)) {
         // increase offset for vector values
         info_idx += 3;
       }

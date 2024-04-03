@@ -97,12 +97,14 @@ cdef class BcfInfo:
         cdef int8_t datatype = info_type.type
         cdef uint32_t offset = info_type.offset
         
+        if datatype == -1:
+            return True
         if datatype == 0:
             return self.thisptr.get_float(offset)
         elif datatype == 1:
             return self.thisptr.get_int(offset)
         elif datatype == 2:
-            return self.thisptr.get_string(offset)
+            return self.thisptr.get_string(offset).decode('utf8')
         elif datatype == 3:
             return self.thisptr.get_ints(offset)
         elif datatype == 4:

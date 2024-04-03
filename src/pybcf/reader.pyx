@@ -130,12 +130,21 @@ cdef class BcfSampleData:
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint32_t n_vals = n_per_sample * n_samples
         
+        cdef vector[int32_t] v_int
+        cdef vector[float] v_float
         if fmt_type.data_type == 1 or fmt_type.data_type == 2 or fmt_type.data_type == 3:
             # integer types
-            return self.thisptr.get_ints(fmt_type)
+            v_int = self.thisptr.get_ints(fmt_type)
+            arr = np.asarray(<int32_t [:n_vals]>&v_int[0])
+            if n_per_sample > 1:
+                arr = np.reshape(arr, (-1, n_per_sample))
+            return arr.copy()
         elif fmt_type.data_type == 5:
-            # float type
-            return self.thisptr.get_floats(fmt_type)
+            v_float = self.thisptr.get_ints(fmt_type)
+            arr = np.asarray(<float [:n_vals]>&v_float[0])
+            if n_per_sample > 1:
+                arr = np.reshape(arr, (-1, n_per_sample))
+            return arr.copy()
         elif fmt_type.data_type == 7:
             # string type
             return self.thisptr.get_strings(fmt_type)

@@ -6,16 +6,16 @@
 
 namespace bcf {
 
-static std::int32_t get_int(char * buf, std::uint32_t & idx, std::uint8_t size) {
+static std::int32_t get_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val=0;
-  if (size == 1) {
+  if (type_size == 1) {
     val = *reinterpret_cast<std::int8_t *>(&buf[idx]);
-  } else if (size == 2) {
+  } else if (type_size == 2) {
     val = *reinterpret_cast<std::int16_t *>(&buf[idx]);
   } else {
     val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
   }
-  idx += size;
+  idx += type_size;
   return val;
 }
 
@@ -55,7 +55,7 @@ Format::Format(igzstream & infile, Header & _header, std::uint32_t len, std::uin
     key = header->format[format_idx].id;
 
     type_val = {buf, buf_idx};
-    keys[key] = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals};
+    keys[key] = {(std::uint8_t) type_val.type, type_val.type_size, buf_idx, type_val.n_vals};
     buf_idx += (type_val.n_vals * type_val.type_size * n_samples);
   }
 }
@@ -69,12 +69,12 @@ FormatType Format::get_type(std::string &key) {
 
 std::vector<std::int32_t> Format::get_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
-  vals.resize(type.len * n_samples);
+  vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
-    for (std::uint32_t i = 0; i < type.len; i++) {
-      vals[idx] = get_int(buf, offset, type.size);
+    for (std::uint32_t i = 0; i < type.n_vals; i++) {
+      vals[idx] = get_int(buf, offset, type.type_size);
       idx++;
     }
   }
@@ -83,11 +83,11 @@ std::vector<std::int32_t> Format::get_ints(FormatType & type) {
 
 std::vector<float> Format::get_floats(FormatType & type) {
   std::vector<float> vals;
-  vals.resize(type.len * n_samples);
+  vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
-    for (std::uint32_t i = 0; i < type.len; i++) {
+    for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = get_float(buf, offset);
       idx++;
     }
@@ -97,12 +97,12 @@ std::vector<float> Format::get_floats(FormatType & type) {
 
 std::vector<std::string> Format::get_strings(FormatType & type) {
   std::vector<std::string> vals;
-  vals.resize(type.len * n_samples);
+  vals.resize(type.n_vals * n_samples);
   std::uint32_t offset = type.offset;
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
-    for (std::uint32_t i = 0; i < type.len; i++) {
-      vals[idx] = get_string(buf, offset, type.size);
+    for (std::uint32_t i = 0; i < type.n_vals; i++) {
+      vals[idx] = get_string(buf, offset, type.type_size);
       idx++;
     }
   }

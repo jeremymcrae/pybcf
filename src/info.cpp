@@ -7,19 +7,19 @@
 
 namespace bcf {
 
-static std::int64_t get_int(igzstream & infile, std::uint8_t size) {
-  std::int64_t val=0;
+static std::int32_t parse_int(igzstream & infile, std::uint8_t size) {
+  std::int32_t val=0;
   infile.read(reinterpret_cast<char *>(&val), size);
   return val;
 }
 
-static float get_float(igzstream & infile) {
+static float parse_float(igzstream & infile) {
   float val;
   infile.read(reinterpret_cast<char *>(&val), 4);
   return val;
 }
 
-static std::string get_string(igzstream & infile, std::uint32_t size) {
+static std::string parse_string(igzstream & infile, std::uint32_t size) {
   std::string val(size, ' ');
   infile.read(reinterpret_cast<char *>(&val[0]), size);
   return val;
@@ -97,7 +97,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     keys[key] = {info_idx, idx};
     
     if (type_val.type == char_) {
-      s_val = get_string(infile, type_val.n_vals);
+      s_val = parse_string(infile, type_val.n_vals);
       strings.push_back(s_val);
     } else {
       for (std::uint32_t i=0; i < type_val.n_vals; i++) {
@@ -105,7 +105,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           case flag:
             break;
           case float_:
-            f_val = get_float(infile);
+            f_val = parse_float(infile);
             if (type_val.n_vals == 1) {
               scalar_floats.push_back(f_val);
             } else {
@@ -113,7 +113,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
             }
             break;
           default:
-            i_val = get_int(infile, type_val.type_size);
+            i_val = parse_int(infile, type_val.type_size);
             if (type_val.n_vals == 1) {
               scalar_ints.push_back(i_val);
             } else {
@@ -126,5 +126,11 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
   }
 }
 
+InfoType Info::get_type(std::string &key) {
+  if (keys.count(key) == 0) {
+    throw std::invalid_argument("unknown info field: " + key);
+  }
+  return keys[key];
+}
 
 }

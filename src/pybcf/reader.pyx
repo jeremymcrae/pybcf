@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from libcpp cimport bool
-from libc.stdint cimport uint8_t, uint32_t, int32_t
+from libc.stdint cimport int8_t, uint8_t, uint32_t, int32_t
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
@@ -22,9 +22,20 @@ cdef extern from 'header.h' namespace 'bcf':
         Header(string text) except +
 
 cdef extern from 'info.h' namespace 'bcf':
+    cdef struct InfoType:
+        int8_t type
+        uint32_t offset
+    
     cdef cppclass Info:
         # declare class constructor and methods
         Info() except +
+        InfoType get_type(string) except +
+        int32_t get_int(uint32_t offset)
+        float get_float(uint32_t offset)
+        string get_string(uint32_t offset)
+        
+        vector[int32_t] get_ints(uint32_t offset)
+        vector[float] get_floats(uint32_t offset)
 
 cdef extern from 'sample_data.h' namespace 'bcf':
     cdef struct FormatType:
@@ -36,10 +47,10 @@ cdef extern from 'sample_data.h' namespace 'bcf':
     cdef cppclass SampleData:
         # declare class constructor and methods
         SampleData() except +
-        FormatType get_type(string)
-        vector[int32_t] get_ints(FormatType, bool geno=False)
-        vector[float] get_floats(FormatType)
-        vector[string] get_strings(FormatType)
+        FormatType get_type(string) except +
+        vector[int32_t] get_ints(FormatType &, bool geno=False)
+        vector[float] get_floats(FormatType &)
+        vector[string] get_strings(FormatType &)
         uint32_t n_samples
 
 cdef extern from 'variant.h' namespace 'bcf':
@@ -63,6 +74,21 @@ cdef class BcfInfo:
         self.thisptr = info
     def __getitem__(self, _key):
         cdef string key = _key.encode('utf8')
+        cdef InfoType info_type = self.thisptr.get_type(key)
+        
+        cdef int8_t datatype = info_type.type
+        cdef uint32_t offset = info_type.offset
+        
+        if datatype == 0:
+            return self.thisptr.get_float(offset)
+        elif datatype == 1:
+            return self.thisptr.get_int(offset)
+        elif datatype == 2:
+            return self.thisptr.get_string(offset)
+        elif datatype == 3:
+            return self.thisptr.get_ints(offset)
+        elif datatype == 4:
+            return self.thisptr.get_floats(offset)
 
 cdef class BcfSampleData:
     cdef SampleData * thisptr

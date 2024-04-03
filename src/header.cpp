@@ -68,7 +68,7 @@ Header::Header(std::string & text) {
         }
         // parse the sample IDs
         std::string item = "FORMAT\t";
-        std::uint32_t i = line.find(item);
+        size_t i = line.find(item);
         if (i != std::string::npos) {
           line = line.substr(i + item.size(), line.size());
           std::istringstream iss(line);

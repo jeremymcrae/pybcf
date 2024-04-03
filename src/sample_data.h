@@ -28,8 +28,8 @@ class SampleData {
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};
-  // ~Format() {
-  //   delete[] buf;
+  // ~SampleData() {
+  //   delete[] phased;
   // };
   FormatType get_type(std::string &key);
   std::vector<std::int32_t> get_ints(FormatType & type);
@@ -37,6 +37,7 @@ public:
   std::vector<std::string> get_strings(FormatType & type);
 
   std::uint32_t n_samples=0;
+  bool * phased;
 };
 
 } // namespace

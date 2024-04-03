@@ -41,6 +41,7 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   if (len == 0) {
     return;
   }
+  phased = new bool[n_samples];
   
   // read the sample data into a buffer, but don't parse until required
   buf = new char[len];
@@ -80,6 +81,10 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = get_int(buf, offset, type.type_size);
+      if (type.is_geno) {
+        phased[n] = vals[idx] & 0x00000001;
+        vals[idx] = vals[idx] >> 1;
+      }
       idx++;
     }
   }

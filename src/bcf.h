@@ -14,10 +14,10 @@ namespace bcf {
 
 class BCF {
   igzstream infile;
-  Header header;
 public:
   BCF(std::string path);
   Variant nextvar();
+  Header header;
 };
 
 }

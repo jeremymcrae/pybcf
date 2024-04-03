@@ -56,11 +56,19 @@ cdef extern from 'variant.h' namespace 'bcf':
         Info info
         SampleData sample_data
 
+cdef class BcfInfo:
+    cdef Info * thisptr
+    cdef set_data(self, Info * info):
+        ''' assigns Info to python class '''
+        self.thisptr = info
+    def __getitem__(self, _key):
+        cdef string key = _key.encode('utf8')
+
 cdef class BcfSampleData:
     cdef SampleData * thisptr
-    cdef set_data(self, SampleData * fmt):
+    cdef set_data(self, SampleData * data):
         ''' assigns SampleData to python class '''
-        self.thisptr = fmt
+        self.thisptr = data
     def __getitem__(self, _key):
         cdef string key = _key.encode('utf8')
         
@@ -83,11 +91,16 @@ cdef class BcfSampleData:
 
 cdef class BcfVariant:
     cdef Variant thisptr
+    cdef BcfInfo _info
     cdef BcfSampleData _samples
     def __cinit__(self, BcfReader bcf):
         self.thisptr = bcf.thisptr.nextvar()
         
-        # set the _format attribute
+        # set the _samples attribute
+        self._info = BcfInfo()
+        self._info.set_data(&self.thisptr.info)
+        
+        # set the _samples attribute
         self._samples = BcfSampleData()
         self._samples.set_data(&self.thisptr.sample_data)
     
@@ -114,6 +127,10 @@ cdef class BcfVariant:
     @property
     def filters(self):
         return [x.decode('utf8') for x in self.thisptr.filters]
+    
+    @property
+    def info(self):
+        return self._info
     
     @property
     def samples(self):

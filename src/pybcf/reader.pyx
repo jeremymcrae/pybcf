@@ -26,7 +26,7 @@ cdef extern from 'info.h' namespace 'bcf':
         # declare class constructor and methods
         Info() except +
 
-cdef extern from 'format.h' namespace 'bcf':
+cdef extern from 'sample_data.h' namespace 'bcf':
     cdef struct FormatType:
         uint8_t data_type
         uint8_t type_size

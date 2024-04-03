@@ -29,7 +29,7 @@ cdef extern from 'info.h' namespace 'bcf':
     cdef cppclass Info:
         # declare class constructor and methods
         Info() except +
-        InfoType get_type(string) except +
+        InfoType get_type(string &) except +
         int32_t get_int(uint32_t offset)
         float get_float(uint32_t offset)
         string get_string(uint32_t offset)
@@ -47,7 +47,7 @@ cdef extern from 'sample_data.h' namespace 'bcf':
     cdef cppclass SampleData:
         # declare class constructor and methods
         SampleData() except +
-        FormatType get_type(string) except +
+        FormatType get_type(string &) except +
         vector[int32_t] get_ints(FormatType &, bool geno=False)
         vector[float] get_floats(FormatType &)
         vector[string] get_strings(FormatType &)

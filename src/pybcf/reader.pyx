@@ -74,7 +74,7 @@ cdef class BcfInfo:
         self.thisptr = info
     
     def __contains__(self, key):
-        ''' check if key in Info ''''
+        ''' check if key in Info '''
         try:
             self.thisptr.get_type(key.encode('utf8'))
             return True
@@ -109,7 +109,7 @@ cdef class BcfSampleData:
         self.thisptr = data
     
     def __contains__(self, key):
-        ''' check if key in SampleData ''''
+        ''' check if key in SampleData '''
         try:
             self.thisptr.get_type(key.encode('utf8'))
             return True

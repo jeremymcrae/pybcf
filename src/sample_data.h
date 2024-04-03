@@ -20,24 +20,23 @@ struct FormatType {
   bool is_geno;
 };
 
+// class to parse data types for each sample
 class SampleData {
   // for each format record, track which type it is, and some index value
   std::unordered_map<std::string, FormatType> keys;
-  char * buf={};
+  std::vector<char> buf;
   Header * header;
+  bool started=false;
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};
-  // ~SampleData() {
-  //   delete[] phased;
-  // };
   FormatType get_type(std::string &key);
   std::vector<std::int32_t> get_ints(FormatType & type);
   std::vector<float> get_floats(FormatType & type);
   std::vector<std::string> get_strings(FormatType & type);
 
   std::uint32_t n_samples=0;
-  bool * phased;
+  std::vector<bool> phased;
 };
 
 } // namespace

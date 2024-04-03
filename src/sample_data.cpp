@@ -42,10 +42,11 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   if (len == 0) {
     return;
   }
-  phased = new bool[n_samples];
+  phased.resize(n_samples);
   
   // read the sample data into a buffer, but don't parse until required
-  buf = new char[len];
+  // buf = new char[len];
+  buf.resize(len);
   infile.read(reinterpret_cast<char *>(&buf[0]), len);
   
   // read the available keys
@@ -55,12 +56,12 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   Typed type_val;
   bool is_geno;
   for (std::uint32_t i = 0; i < n_fmt; i++ ){
-    type_val = {buf, buf_idx};
-    format_idx = get_int(buf, buf_idx, type_val.type_size);
+    type_val = {&buf[0], buf_idx};
+    format_idx = get_int(&buf[0], buf_idx, type_val.type_size);
     key = header->format[format_idx].id;
     is_geno = key == "GT";
 
-    type_val = {buf, buf_idx};
+    type_val = {&buf[0], buf_idx};
     keys[key] = {(std::uint8_t) type_val.type, type_val.type_size, buf_idx, 
                  type_val.n_vals, is_geno};
     buf_idx += (type_val.n_vals * type_val.type_size * n_samples);
@@ -81,7 +82,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_int(buf, offset, type.type_size);
+      vals[idx] = get_int(&buf[0], offset, type.type_size);
       if (type.is_geno) {
         phased[n] = vals[idx] & 0x00000001;
         vals[idx] = vals[idx] >> 1;
@@ -99,7 +100,7 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_float(buf, offset);
+      vals[idx] = get_float(&buf[0], offset);
       idx++;
     }
   }
@@ -113,7 +114,7 @@ std::vector<std::string> SampleData::get_strings(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_string(buf, offset, type.type_size);
+      vals[idx] = get_string(&buf[0], offset, type.type_size);
       idx++;
     }
   }

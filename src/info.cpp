@@ -7,26 +7,45 @@
 
 namespace bcf {
 
-static std::int32_t parse_int(igzstream & infile, std::uint8_t size) {
+static std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val=0;
-  infile.read(reinterpret_cast<char *>(&val), size);
+  if (type_size == 1) {
+    val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
+    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
+  } else if (type_size == 2) {
+    val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
+    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
+  } else {
+    val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
+  }
+  idx += type_size;
   return val;
 }
 
-static float parse_float(igzstream & infile) {
-  float val;
-  infile.read(reinterpret_cast<char *>(&val), 4);
+static float parse_float(char * buf, std::uint32_t & idx) {
+  float val = *reinterpret_cast<float *>(&buf[idx]);
+  idx += 4;
   return val;
 }
 
-static std::string parse_string(igzstream & infile, std::uint32_t size) {
-  std::string val(size, ' ');
-  infile.read(reinterpret_cast<char *>(&val[0]), size);
+static std::string parse_string(const char * buf, std::uint32_t & idx, std::uint32_t size) {
+  std::string val;
+  val.resize(size);
+  std::memcpy(&val[0], &buf[idx], size);
+  idx += size;
   return val;
 }
 
-Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
+Info::Info(igzstream & infile, Header & _header, std::uint32_t n_info) {
+  header = &_header;
+  
+  // read the sample data into a buffer, but don't parse until required
+  buf.resize(n_info);
+  infile.read(reinterpret_cast<char *>(&buf[0]), n_info);
+}
 
+void Info::parse() {
+  std::uint32_t buf_idx = 0;
   std::uint8_t typing;
   Typed type_val;
 
@@ -40,16 +59,13 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
   std::int32_t i_val;
   std::string s_val;
 
-  for (std::uint32_t i = 0; i < n_info; i++) {
-    infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
-    type_val = {typing, infile};
-    id_idx = 0;
-    infile.read(reinterpret_cast<char *>(&id_idx), type_val.type_size);
-    key = header.info[id_idx].id;
+  for (std::uint32_t i = 0; i < buf.size(); i++) {
+    type_val = {&buf[0], buf_idx};
+    id_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
+    key = header->info[id_idx].id;
 
     // now parse the value
-    infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
-    type_val = {typing, infile};
+    type_val = {&buf[0], buf_idx};
     
     // figure out whuch datastore to keep values in
     switch (type_val.type) {
@@ -95,7 +111,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
     keys[key] = {info_idx, idx};
     
     if (type_val.type == char_) {
-      s_val = parse_string(infile, type_val.n_vals);
+      s_val = parse_string(&buf[0], buf_idx, type_val.n_vals);
       strings.push_back(s_val);
     } else {
       for (std::uint32_t i=0; i < type_val.n_vals; i++) {
@@ -103,7 +119,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
           case flag:
             break;
           case float_:
-            f_val = parse_float(infile);
+            f_val = parse_float(&buf[0], buf_idx);
             if (type_val.n_vals == 1) {
               scalar_floats.push_back(f_val);
             } else {
@@ -111,7 +127,7 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
             }
             break;
           default:
-            i_val = parse_int(infile, type_val.type_size);
+            i_val = parse_int(&buf[0], buf_idx, type_val.type_size);
             if (type_val.n_vals == 1) {
               scalar_ints.push_back(i_val);
             } else {
@@ -125,6 +141,10 @@ Info::Info(igzstream & infile, Header & header, std::uint32_t n_info) {
 }
 
 InfoType Info::get_type(std::string &key) {
+  if (!is_parsed) {
+    parse();
+  }
+  
   if (keys.count(key) == 0) {
     throw std::invalid_argument("unknown info field: " + key);
   }

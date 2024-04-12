@@ -19,6 +19,13 @@ struct InfoType {
 class Info {
   // for each info record, track which type it is, and some index value
   std::unordered_map<std::string, InfoType> keys;
+  
+  Header * header;
+  std::vector<char> buf;
+  bool is_parsed=false;
+  
+  void parse();
+  
   // keep a number of data stores, for the different value types, which can be
   // one of "Integer, Float, Flag, Character, and String"
   std::vector<float> scalar_floats;                      // type 0
@@ -28,7 +35,7 @@ class Info {
   std::vector<std::vector<float>> vector_floats;         // type 3
   std::vector<std::vector<std::int32_t>> vector_ints;    // type 4
 public:
-  Info(igzstream & infile, Header & header, std::uint32_t n_info);
+  Info(igzstream & infile, Header & _header, std::uint32_t n_info);
   Info() {};
   InfoType get_type(std::string &key);
   

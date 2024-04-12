@@ -31,7 +31,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   n_info = n_allele_info & 0xffff;
   
   if (n_alleles == 0) {
-    throw std::invalid_argument(chrom + ":" + std::to_string(pos) + "lacks a ref allele");
+    throw std::invalid_argument(chrom + ":" + std::to_string(pos) + " lacks a ref allele");
   }
   
   std::uint32_t n_fmt_sample;

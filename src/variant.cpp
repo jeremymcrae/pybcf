@@ -13,6 +13,10 @@ Variant::Variant(igzstream & infile,  Header & header) {
   pos += 1; // convert to 1-based coordinate
   infile.read(reinterpret_cast<char *>(&rlen), sizeof(std::int32_t));
   
+  if (infile.eof()) {
+    throw std::out_of_range("reached end of file");
+  }
+  
   std::uint32_t bytes;
   infile.read(reinterpret_cast<char *>(&bytes), sizeof(std::uint32_t));
   if (bytes != 0x7f800001) {

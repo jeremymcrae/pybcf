@@ -89,7 +89,7 @@ cdef class BcfInfo:
     
     def __getitem__(self, _key):
         if not self.__contains__(_key):
-            raise KeyError(_key)
+            raise KeyError(f'unknown INFO field: {_key}')
         
         cdef string key = _key.encode('utf8')
         cdef InfoType info_type = self.thisptr.get_type(key)
@@ -126,7 +126,7 @@ cdef class BcfSampleData:
     
     def __getitem__(self, _key):
         if not self.__contains__(_key):
-            raise KeyError(_key)
+            raise KeyError(f'unknown FORMAT field: {_key}')
         
         cdef string key = _key.encode('utf8')
         

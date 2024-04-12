@@ -6,27 +6,26 @@ namespace bcf {
 
 Variant::Variant(igzstream & infile,  Header & header) {
 
-  infile.read(reinterpret_cast<char *>(&metadata_len), sizeof(std::uint32_t));
-  infile.read(reinterpret_cast<char *>(&sampledata_len), sizeof(std::uint32_t));
-  infile.read(reinterpret_cast<char *>(&contig_idx), sizeof(std::int32_t));
-  infile.read(reinterpret_cast<char *>(&pos), sizeof(std::int32_t));
-  pos += 1; // convert to 1-based coordinate
-  infile.read(reinterpret_cast<char *>(&rlen), sizeof(std::int32_t));
+  char buf[32];
+  infile.read(reinterpret_cast<char *>(&buf[0]), 32);
   
   if (infile.eof()) {
     throw std::out_of_range("reached end of file");
   }
+
+  metadata_len = *reinterpret_cast<std::uint32_t *>(&buf[0]);
+  sampledata_len = *reinterpret_cast<std::uint32_t *>(&buf[4]);
+  contig_idx = *reinterpret_cast<std::int32_t *>(&buf[8]);
+  pos = *reinterpret_cast<std::int32_t *>(&buf[12]) + 1; // convert to 1-based coordinate
+  rlen = *reinterpret_cast<std::int32_t *>(&buf[16]);
   
-  std::uint32_t bytes;
-  infile.read(reinterpret_cast<char *>(&bytes), sizeof(std::uint32_t));
-  if (bytes != 0x7f800001) {
-    qual = *reinterpret_cast<float *>(&bytes);
+  if (*reinterpret_cast<std::uint32_t *>(&buf[20]) != 0x7f800001) {
+    qual = *reinterpret_cast<float *>(&buf[20]);
   }
 
   chrom = header.contigs[contig_idx].id;
   
-  std::uint32_t n_allele_info;
-  infile.read(reinterpret_cast<char *>(&n_allele_info), sizeof(std::uint32_t));
+  std::uint32_t n_allele_info = *reinterpret_cast<std::uint32_t *>(&buf[24]);;
   n_alleles = n_allele_info >> 16;
   n_info = n_allele_info & 0xffff;
   
@@ -34,8 +33,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
     throw std::invalid_argument(chrom + ":" + std::to_string(pos) + " lacks a ref allele");
   }
   
-  std::uint32_t n_fmt_sample;
-  infile.read(reinterpret_cast<char *>(&n_fmt_sample), sizeof(std::uint32_t));
+  std::uint32_t n_fmt_sample = *reinterpret_cast<std::uint32_t *>(&buf[28]);
   n_sample = n_fmt_sample & 0xffffff;
   n_fmt = n_fmt_sample >> 24;
 

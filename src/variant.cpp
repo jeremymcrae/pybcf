@@ -46,7 +46,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   varid.resize(type_val.n_vals);
   infile.read(reinterpret_cast<char *>(&varid[0]), type_val.n_vals);
 
-  // get ref allele
+  // get ref allele. We previously raised an error if no ref allele exists
   infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
   type_val = {typing, infile};
   ref.resize(type_val.n_vals);

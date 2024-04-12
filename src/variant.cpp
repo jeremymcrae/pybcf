@@ -30,8 +30,10 @@ Variant::Variant(igzstream & infile,  Header & header) {
   n_alleles = n_allele_info >> 16;
   n_info = n_allele_info & 0xffff;
   
-  alts.resize(n_alleles - 1);
-
+  if (n_alleles == 0) {
+    throw std::invalid_argument(chrom + ":" + std::to_string(pos) + "lacks a ref allele");
+  }
+  
   std::uint32_t n_fmt_sample;
   infile.read(reinterpret_cast<char *>(&n_fmt_sample), sizeof(std::uint32_t));
   n_sample = n_fmt_sample & 0xffffff;
@@ -44,18 +46,21 @@ Variant::Variant(igzstream & infile,  Header & header) {
   varid.resize(type_val.n_vals);
   infile.read(reinterpret_cast<char *>(&varid[0]), type_val.n_vals);
 
-  // get all alleles
+  // get ref allele
+  infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
+  type_val = {typing, infile};
+  ref.resize(type_val.n_vals);
+  infile.read(reinterpret_cast<char *>(&ref[0]), type_val.n_vals);
+
+  // get alt alleles
+  alts.resize(n_alleles - 1);
   std::string allele;
-  for (std::uint32_t i = 0; i < n_alleles; i++) {
+  for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
     infile.read(reinterpret_cast<char *>(&typing), sizeof(std::uint8_t));
     type_val = {typing, infile};
     allele.resize(type_val.n_vals);
     infile.read(reinterpret_cast<char *>(&allele[0]), type_val.n_vals);
-    if (i == 0) {
-      ref = allele;
-    } else {
-      alts[i-1] = allele;
-    }
+    alts[i] = allele;
   }
 
   // read the filter fields

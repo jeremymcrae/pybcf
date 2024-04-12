@@ -23,6 +23,7 @@ class Info {
   Header * header;
   std::vector<char> buf;
   bool is_parsed=false;
+  std::uint32_t n_info=0;
   
   void parse();
   
@@ -35,7 +36,7 @@ class Info {
   std::vector<std::vector<float>> vector_floats;         // type 3
   std::vector<std::vector<std::int32_t>> vector_ints;    // type 4
 public:
-  Info(igzstream & infile, Header & _header, std::uint32_t n_info);
+  Info(igzstream & infile, Header & _header, std::uint32_t info_len, std::uint32_t _n_info);
   Info() {};
   InfoType get_type(std::string &key);
   

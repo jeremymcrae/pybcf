@@ -13,6 +13,9 @@ Variant::Variant(igzstream & infile,  Header & header) {
     throw std::out_of_range("reached end of file");
   }
 
+  std::uint32_t metadata_len;
+  std::uint32_t sampledata_len;
+  
   metadata_len = *reinterpret_cast<std::uint32_t *>(&buf[0]);
   sampledata_len = *reinterpret_cast<std::uint32_t *>(&buf[4]);
   contig_idx = *reinterpret_cast<std::int32_t *>(&buf[8]);
@@ -72,7 +75,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   }
   
   // read the info fields. TODO - find out a way to skip this if not required
-  info = Info(infile, header, n_info);
+  info = Info(infile, header, metadata_len, n_info);
   sample_data = SampleData(infile, header, sampledata_len, n_fmt, n_sample);
 }
 

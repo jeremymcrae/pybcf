@@ -36,12 +36,14 @@ static std::string parse_string(const char * buf, std::uint32_t & idx, std::uint
   return val;
 }
 
-Info::Info(igzstream & infile, Header & _header, std::uint32_t n_info) {
+Info::Info(igzstream & infile, Header & _header, std::uint32_t info_len, std::uint32_t _n_info) {
   header = &_header;
+  n_info = _n_info;
   
   // read the sample data into a buffer, but don't parse until required
-  buf.resize(n_info);
-  infile.read(reinterpret_cast<char *>(&buf[0]), n_info);
+  std::cout << "reading " << info_len << " into info buf" << std::endl;
+  buf.resize(info_len);
+  infile.read(reinterpret_cast<char *>(&buf[0]), info_len);
 }
 
 void Info::parse() {
@@ -59,10 +61,12 @@ void Info::parse() {
   std::int32_t i_val;
   std::string s_val;
 
-  for (std::uint32_t i = 0; i < buf.size(); i++) {
+  for (std::uint32_t i = 0; i < n_info; i++) {
     type_val = {&buf[0], buf_idx};
     id_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
     key = header->info[id_idx].id;
+    
+    std::cout << "info idx: " << id_idx << ", key=" << key << std::endl;
 
     // now parse the value
     type_val = {&buf[0], buf_idx};

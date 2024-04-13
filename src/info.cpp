@@ -7,35 +7,6 @@
 
 namespace bcf {
 
-static std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
-  std::int32_t val=0;
-  if (type_size == 1) {
-    val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
-    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
-  } else if (type_size == 2) {
-    val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
-    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
-  } else {
-    val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
-  }
-  idx += type_size;
-  return val;
-}
-
-static float parse_float(char * buf, std::uint32_t & idx) {
-  float val = *reinterpret_cast<float *>(&buf[idx]);
-  idx += 4;
-  return val;
-}
-
-static std::string parse_string(const char * buf, std::uint32_t & idx, std::uint32_t size) {
-  std::string val;
-  val.resize(size);
-  std::memcpy(&val[0], &buf[idx], size);
-  idx += size;
-  return val;
-}
-
 Info::Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _n_info) {
   buf = _buf;
   header = _header;

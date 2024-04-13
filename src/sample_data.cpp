@@ -8,35 +8,6 @@
 
 namespace bcf {
 
-static std::int32_t get_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
-  std::int32_t val=0;
-  if (type_size == 1) {
-    val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
-    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
-  } else if (type_size == 2) {
-    val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
-    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
-  } else {
-    val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
-  }
-  idx += type_size;
-  return val;
-}
-
-static float get_float(char * buf, std::uint32_t & idx) {
-  float val = *reinterpret_cast<float *>(&buf[idx]);
-  idx += 4;
-  return val;
-}
-
-static std::string get_string(const char * buf, std::uint32_t & idx, std::uint32_t size) {
-  std::string val;
-  val.resize(size);
-  std::memcpy(&val[0], &buf[idx], size);
-  idx += size;
-  return val;
-}
-
 SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
   n_samples = _n_samples;
   header = &_header;
@@ -47,7 +18,6 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   missing.resize(n_samples);
   
   // read the sample data into a buffer, but don't parse until required
-  // buf = new char[len];
   buf.resize(len);
   infile.read(reinterpret_cast<char *>(&buf[0]), len);
   
@@ -59,7 +29,7 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   bool is_geno;
   for (std::uint32_t i = 0; i < n_fmt; i++ ){
     type_val = {&buf[0], buf_idx};
-    format_idx = get_int(&buf[0], buf_idx, type_val.type_size);
+    format_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
     key = header->format[format_idx].id;
     is_geno = key == "GT";
 
@@ -88,7 +58,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_int(&buf[0], offset, type.type_size);
+      vals[idx] = parse_int(&buf[0], offset, type.type_size);
       if (type.is_geno) {
         phase[n] = vals[idx] & 0x00000001;
         vals[idx] = (vals[idx] >> 1) - 1;
@@ -110,7 +80,7 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_float(&buf[0], offset);
+      vals[idx] = parse_float(&buf[0], offset);
       idx++;
     }
   }
@@ -124,7 +94,7 @@ std::vector<std::string> SampleData::get_strings(FormatType & type) {
   std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = get_string(&buf[0], offset, type.type_size);
+      vals[idx] = parse_string(&buf[0], offset, type.type_size);
       idx++;
     }
   }

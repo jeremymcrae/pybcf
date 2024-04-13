@@ -10,6 +10,7 @@
 #include "gzstream/gzstream.h"
 
 #include "header.h"
+#include "types.h"
 #include "info.h"
 #include "sample_data.h"
 

@@ -31,17 +31,7 @@ public:
   std::uint32_t n_vals=0;
   std::uint8_t type_size=0;
   Typed() {}
-  Typed(std::uint8_t byte, igzstream & infile) {
-    set_type(byte);
-    if (n_vals == 15) {
-      // determine the count from the following bytes
-      infile.read(reinterpret_cast<char *>(&byte), 1);
-      Types next = Types(byte & 0x0F);
-      infile.read(reinterpret_cast<char *>(&n_vals), type_sizes[next]);
-    }
-  }
-  
-  // alternative version for reading values from a char buffer
+  // reading values from a char buffer
   Typed(char *buf, std::uint32_t &idx){
     std::uint8_t byte = get_byte(buf, idx);
     set_type(byte);
@@ -68,6 +58,35 @@ public:
     }
   }
 };
+
+inline std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
+  std::int32_t val=0;
+  if (type_size == 1) {
+    val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
+    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
+  } else if (type_size == 2) {
+    val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
+    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
+  } else {
+    val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
+  }
+  idx += type_size;
+  return val;
+}
+
+inline float parse_float(char * buf, std::uint32_t & idx) {
+  float val = *reinterpret_cast<float *>(&buf[idx]);
+  idx += 4;
+  return val;
+}
+
+inline std::string parse_string(const char * buf, std::uint32_t & idx, std::uint32_t size) {
+  std::string val;
+  val.resize(size);
+  std::memcpy(&val[0], &buf[idx], size);
+  idx += size;
+  return val;
+}
 
 } // namespace
 

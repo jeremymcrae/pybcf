@@ -36,19 +36,15 @@ static std::string parse_string(const char * buf, std::uint32_t & idx, std::uint
   return val;
 }
 
-Info::Info(igzstream & infile, Header & _header, std::uint32_t info_len, std::uint32_t _n_info) {
-  header = &_header;
+Info::Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _n_info) {
+  buf = _buf;
+  header = _header;
+  offset = _offset;
   n_info = _n_info;
-  
-  // read the sample data into a buffer, but don't parse until required
-  std::cout << "reading " << info_len << " into info buf" << std::endl;
-  buf.resize(info_len);
-  infile.read(reinterpret_cast<char *>(&buf[0]), info_len);
 }
 
 void Info::parse() {
-  std::uint32_t buf_idx = 0;
-  std::uint8_t typing;
+  std::uint32_t buf_idx = offset;
   Typed type_val;
 
   // read the info fields. TODO - find out a way to skip this if not required
@@ -62,16 +58,14 @@ void Info::parse() {
   std::string s_val;
 
   for (std::uint32_t i = 0; i < n_info; i++) {
-    type_val = {&buf[0], buf_idx};
+    type_val = {buf, buf_idx};
     id_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
     key = header->info[id_idx].id;
-    
-    std::cout << "info idx: " << id_idx << ", key=" << key << std::endl;
 
     // now parse the value
     type_val = {&buf[0], buf_idx};
     
-    // figure out whuch datastore to keep values in
+    // figure out which datastore to keep values in
     switch (type_val.type) {
       case flag:
         info_idx = -1;

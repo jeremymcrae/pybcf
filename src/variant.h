@@ -17,6 +17,7 @@ namespace bcf {
 
 
 class Variant {
+  std::vector<char> buf;
   std::int32_t contig_idx=0;
   std::int32_t rlen=0;
   std::uint32_t n_alleles=0;

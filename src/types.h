@@ -59,6 +59,11 @@ public:
   }
 };
 
+/// @brief parse a single integer value from a char array
+/// @param buf char array
+/// @param idx offset where integer data starts at
+/// @param type_size number of bytes to use for the integer (1, 2 or 4)
+/// @return value as 32-bit int
 inline std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val=0;
   if (type_size == 1) {
@@ -74,12 +79,21 @@ inline std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type
   return val;
 }
 
+/// @brief parse a single float value from a char array
+/// @param buf char array
+/// @param idx offset where float data starts at
+/// @return value as float
 inline float parse_float(char * buf, std::uint32_t & idx) {
   float val = *reinterpret_cast<float *>(&buf[idx]);
   idx += 4;
   return val;
 }
 
+/// @brief parse a string from a char array
+/// @param buf char array
+/// @param idx offset where string data starts at
+/// @param size number of bytes to include in the string
+/// @return value as string
 inline std::string parse_string(const char * buf, std::uint32_t & idx, std::uint32_t size) {
   std::string val;
   val.resize(size);

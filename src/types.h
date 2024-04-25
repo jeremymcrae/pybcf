@@ -2,6 +2,7 @@
 #define BCF_TYPES_H
 
 #include <cstdint>
+#include <cstring>
 
 #include "gzstream/gzstream.h"
 

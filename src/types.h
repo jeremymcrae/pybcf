@@ -40,7 +40,15 @@ public:
       // determine the count from the following bytes
       byte = get_byte(buf, idx);
       Types next = Types(byte & 0x0F);
-      n_vals = *reinterpret_cast<std::uint8_t *>(&buf[idx]);
+      if (next == int8) {
+        n_vals = *reinterpret_cast<std::uint8_t *>(&buf[idx]);
+      } else if (next == int16) {
+        n_vals = *reinterpret_cast<std::uint16_t *>(&buf[idx]);
+      } else if (next == int32) {
+        n_vals = *reinterpret_cast<std::uint32_t *>(&buf[idx]);
+      } else {
+        throw std::invalid_argument("cannot identify number of bytes to read");
+      }
       idx += type_sizes[next];
     }
   }

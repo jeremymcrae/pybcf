@@ -24,9 +24,8 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-*
           CIBW_SKIP: '*i686'
-          CIBW_TEST_REQUIRES_LINUX: 'apt install libbz2-dev; pip install pysam'
-          CIBW_TEST_REQUIRES_WINDOWS: 'pip install pysam'
-          CIBW_TEST_REQUIRES_MACOS: 'pip install pysam'
+          CIBW_BEFORE_TEST_LINUX: 'apt install libbz2-dev'
+          CIBW_TEST_REQUIRES: 'pip install pysam'
           CIBW_TEST_COMMAND: "python -m unittest discover --verbose -s {project}"
 
       - uses: actions/upload-artifact@v3

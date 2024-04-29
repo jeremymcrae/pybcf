@@ -203,7 +203,7 @@ cdef class BcfVariant:
     
     @property
     def alts(self):
-        return [x.decode('utf8') for x in self.thisptr.alts]
+        return tuple(x.decode('utf8') for x in self.thisptr.alts)
     
     @property
     def qual(self):

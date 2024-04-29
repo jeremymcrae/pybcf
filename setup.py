@@ -110,6 +110,9 @@ setup(name='pybcf',
     install_requires=[
         'numpy',
     ],
+    test_requires=[
+        'pysam',
+    ],
     classifiers=[
         'Development Status :: 4 - Beta',
         'Topic :: Scientific/Engineering :: Bio-Informatics',

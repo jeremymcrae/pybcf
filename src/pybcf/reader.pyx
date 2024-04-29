@@ -208,7 +208,15 @@ cdef class BcfVariant:
         return tuple(x.decode('utf8') for x in self.thisptr.alts)
     
     @property
+    def id(self):
+        if self.thisptr.varid.size() == 0:
+            return None
+        return self.thisptr.varid.decode()
+    
+    @property
     def qual(self):
+        if np.isnan(self.thisptr.qual):
+            return None
         return self.thisptr.qual
     
     @property

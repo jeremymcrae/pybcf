@@ -23,6 +23,8 @@ void Info::parse() {
   std::int8_t info_idx;
   std::uint32_t idx;
   std::string key;
+  std::string number;
+  bool has_multiple = false; 
 
   float f_val;
   std::int32_t i_val;
@@ -32,6 +34,11 @@ void Info::parse() {
     type_val = {buf, buf_idx};
     id_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
     key = header->info[id_idx].id;
+    number = header->info[id_idx].number;
+    has_multiple = number == "A" || number == "R" || number == "G";
+    if ((number.find_first_not_of("0123456789") == std::string::npos)) {
+      has_multiple |= std::stol(number) > 1;
+    }
 
     // now parse the value
     type_val = {&buf[0], buf_idx};
@@ -54,12 +61,12 @@ void Info::parse() {
     }
     
     if (type_val.type != flag) {
-      if ((type_val.n_vals > 1) && (type_val.type != char_)) {
+      if ((type_val.n_vals > 1 || has_multiple) && (type_val.type != char_)) {
         // increase offset for vector values
         info_idx += 3;
       }
       if (type_val.type == float_) {
-        if (type_val.n_vals == 1) { 
+        if (type_val.n_vals == 1 && !has_multiple) { 
           idx = scalar_floats.size();
         } else {
           idx = vector_floats.size();
@@ -68,7 +75,7 @@ void Info::parse() {
       } else if (type_val.type == char_) {
         idx = strings.size();
       } else {
-        if (type_val.n_vals == 1) {
+        if (type_val.n_vals == 1 && !has_multiple) {
           idx = scalar_ints.size();
         } else {
           idx = vector_ints.size();
@@ -89,7 +96,7 @@ void Info::parse() {
             break;
           case float_:
             f_val = parse_float(&buf[0], buf_idx);
-            if (type_val.n_vals == 1) {
+            if (type_val.n_vals == 1 && !has_multiple) {
               scalar_floats.push_back(f_val);
             } else {
               vector_floats[idx].push_back(f_val);
@@ -97,7 +104,7 @@ void Info::parse() {
             break;
           default:
             i_val = parse_int(&buf[0], buf_idx, type_val.type_size);
-            if (type_val.n_vals == 1) {
+            if (type_val.n_vals == 1  && !has_multiple) {
               scalar_ints.push_back(i_val);
             } else {
               vector_ints[idx].push_back(i_val);

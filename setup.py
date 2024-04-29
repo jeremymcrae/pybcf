@@ -3,6 +3,7 @@ import glob
 import io
 from setuptools import setup
 import sys
+import os
 
 from distutils.core import Extension
 from distutils.ccompiler import new_compiler

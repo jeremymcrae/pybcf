@@ -106,9 +106,9 @@ cdef class BcfInfo:
         elif datatype == 2:
             return self.thisptr.get_string(offset).decode('utf8')
         elif datatype == 3:
-            return self.thisptr.get_ints(offset)
+            return tuple(self.thisptr.get_floats(offset))
         elif datatype == 4:
-            return self.thisptr.get_floats(offset)
+            return tuple(self.thisptr.get_ints(offset))
 
 cdef class BcfSampleData:
     cdef SampleData * thisptr

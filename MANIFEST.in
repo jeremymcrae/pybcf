@@ -6,3 +6,7 @@ include src/pybcf/*.py
 include src/pybcf/*.pyx
 include src/*.h
 include src/*.cpp
+include src/gzstream/gzstream.h
+include src/gzstream/gzstream.C
+include src/zlib/*.h
+include src/zlib/*.c

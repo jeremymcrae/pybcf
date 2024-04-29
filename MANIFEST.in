@@ -1,8 +1,8 @@
 # pybcf code
 include MANIFEST.in
 include pyproject.toml
-include src/bcf/*.cpp
-include src/bcf/*.py
-include src/bcf/*.pyx
+include src/pybcf/*.cpp
+include src/pybcf/*.py
+include src/pybcf/*.pyx
 include src/*.h
 include src/*.cpp

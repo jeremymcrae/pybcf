@@ -19,3 +19,4 @@ for var in bcf:
 ### Limitations
  - can't fetch variants from random regions yet
  - not extensively tested yet
+ - extracting info fields is slow at the moment

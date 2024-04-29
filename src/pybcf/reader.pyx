@@ -212,7 +212,7 @@ cdef class BcfVariant:
         return self.thisptr.qual
     
     @property
-    def filters(self):
+    def filter(self):
         return [x.decode('utf8') for x in self.thisptr.filters]
     
     @property

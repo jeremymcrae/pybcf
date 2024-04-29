@@ -112,6 +112,7 @@ void Info::parse() {
 InfoType Info::get_type(std::string &key) {
   if (!is_parsed) {
     parse();
+    is_parsed = true;
   }
   
   if (keys.count(key) == 0) {

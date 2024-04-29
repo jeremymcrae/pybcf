@@ -24,8 +24,10 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-*
           CIBW_SKIP: '*i686'
-          CIBW_BEFORE_TEST_LINUX: 'yum install bzip2-libs'
-          CIBW_TEST_REQUIRES: 'pysam'
+          # CIBW_BEFORE_TEST_LINUX: 'yum install bzip2-libs'
+          CIBW_TEST_REQUIRES_LINUX: 'pysam==0.19.0'
+          CIBW_TEST_REQUIRES_MACOS: 'pysam'
+          CIBW_TEST_REQUIRES_WINDOWS: 'pysam'
           CIBW_TEST_COMMAND: "python -m unittest discover --verbose -s {project}"
 
       - uses: actions/upload-artifact@v3

@@ -203,6 +203,8 @@ cdef class BcfVariant:
     
     @property
     def alts(self):
+        if self.thisptr.alts.size() == 0:
+            return None
         return tuple(x.decode('utf8') for x in self.thisptr.alts)
     
     @property

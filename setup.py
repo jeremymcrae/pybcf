@@ -110,7 +110,7 @@ setup(name='pybcf',
     install_requires=[
         'numpy',
     ],
-    test_requires=[
+    tests_require=[
         'pysam',
     ],
     classifiers=[

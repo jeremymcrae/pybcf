@@ -49,8 +49,7 @@ FormatType SampleData::get_type(std::string &key) {
 
 std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   if (type.is_geno) {
-    // confirm we checked sample phasing if we look at the genotype data
-    phase_checked = true;
+    return get_geno(type);
   }
   std::vector<std::int32_t> vals;
   vals.resize(type.n_vals * n_samples);
@@ -59,14 +58,29 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   for (std::uint32_t n=0; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = parse_int(&buf[0], offset, type.type_size);
-      if (type.is_geno) {
-        phase[n] = vals[idx] & 0x00000001;
-        vals[idx] = (vals[idx] >> 1) - 1;
-        // this only checks on genotype status, but this should apply to other
-        // fields too (AD, DP etc), as if a sample lacks gt, other fields 
-        // should also be absent
-        missing[n] = vals[idx] == -1;
-      }
+      idx++;
+    }
+  }
+  return vals;
+}
+
+std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
+  // confirm we checked sample phasing if we look at the genotype data
+  phase_checked = true;
+  
+  std::vector<std::int32_t> vals;
+  vals.resize(type.n_vals * n_samples);
+  std::uint32_t offset = type.offset;
+  std::uint32_t idx=0;
+  for (std::uint32_t n=0; n < n_samples; n++) {
+    for (std::uint32_t i = 0; i < type.n_vals; i++) {
+      vals[idx] = parse_int(&buf[0], offset, type.type_size);
+      phase[n] = vals[idx] & 0x00000001;
+      vals[idx] = (vals[idx] >> 1) - 1;
+      // this only checks on genotype status, but this should apply to other
+      // fields too (AD, DP etc), as if a sample lacks gt, other fields 
+      // should also be absent
+      missing[n] = vals[idx] == -1;
       idx++;
     }
   }

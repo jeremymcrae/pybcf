@@ -26,6 +26,7 @@ class SampleData {
   std::unordered_map<std::string, FormatType> keys;
   std::vector<char> buf;
   Header * header;
+  std::vector<std::int32_t> get_geno(FormatType &type);
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};

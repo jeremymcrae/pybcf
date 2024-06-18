@@ -4,6 +4,7 @@ import io
 from setuptools import setup
 import sys
 import os
+import platform
 
 from distutils.core import Extension
 from distutils.ccompiler import new_compiler
@@ -20,6 +21,9 @@ if sys.platform == "darwin":
     EXTRA_LINK_ARGS += [
         "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
         ]
+
+if platform.machine() == 'x86_64':
+    EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']
 
 def flatten(*lists):
     return [str(x) for sublist in lists for x in sublist]

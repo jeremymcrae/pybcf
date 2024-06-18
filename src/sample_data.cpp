@@ -6,6 +6,14 @@
 #include "sample_data.h"
 #include "types.h"
 
+#if defined(__x86_64__)
+  #include <immintrin.h>
+#endif
+
+#if defined(__aarch64__)
+  #include <arm_neon.h>
+#endif
+
 namespace bcf {
 
 SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
@@ -69,10 +77,111 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   phase_checked = true;
   
   std::vector<std::int32_t> vals;
-  vals.resize(type.n_vals * n_samples);
+  std::uint64_t max_n = type.n_vals * n_samples;
+  vals.resize(max_n);
   std::uint32_t offset = type.offset;
-  std::uint32_t idx=0;
-  for (std::uint32_t n=0; n < n_samples; n++) {
+  std::uint32_t n=0;
+#if defined(__x86_64__)
+  if (__builtin_cpu_supports("avx2") && (type.n_vals == 2) && (type.type_size == 1)) {
+    __m256i initial, geno, phase_vec;
+    __m128i low, hi, phase128;
+    __m256i mask_phase = _mm256_set_epi32(0x01000100, 0x01000100, 0x01000100, 0x01000100,
+                                       0x01000100, 0x01000100, 0x01000100, 0x01000100);
+    __m256i mask_geno = _mm256_set_epi32(0xfefefefe, 0xfefefefe, 0xfefefefe, 0xfefefefe,
+                                      0xfefefefe, 0xfefefefe, 0xfefefefe, 0xfefefefe);
+    __m256i sub = _mm256_set_epi64x(0x0101010101010101, 0x0101010101010101, 0x0101010101010101, 0x0101010101010101);
+    __m128i missing_mask = _mm_set_epi32(0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff);
+    __m128i missing_indicator = _mm_set_epi8(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
+    __m128i shuffle = _mm_set_epi8(0, 2, 4, 6, 8, 10, 12, 14, 17, 3, 5, 7, 9, 11, 13, 15);
+    
+    for (; n < (max_n - (max_n % 32)); n += 32) {
+      initial = _mm256_loadu_si256((__m256i *) &buf[offset + n]);
+
+      geno = _mm256_and_si256(initial, mask_geno);
+      geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
+      phase_vec = _mm256_and_si256(initial, mask_phase);
+      
+      // expand the first 8 values to 32-bits, and store
+      low = _mm256_extractf128_si256(geno, 0);
+      hi = _mm256_extractf128_si256(geno, 1);
+      _mm_storeu_ps((float *) &vals[n], (__m128) _mm_cvtepi8_epi32(low));
+      _mm_storeu_ps((float *) &vals[n + 4], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)));
+      _mm_storeu_ps((float *) &vals[n + 8], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)));
+      _mm_storeu_ps((float *) &vals[n + 12], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)));
+      _mm_storeu_ps((float *) &vals[n + 16], (__m128) _mm_cvtepi8_epi32(hi));
+      _mm_storeu_ps((float *) &vals[n + 20], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)));
+      _mm_storeu_ps((float *) &vals[n + 24], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)));
+      _mm_storeu_ps((float *) &vals[n + 28], (__m128) _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)));
+      
+      // check for missing genotypes. We can check if every second genotype is
+      // -1, since that is the missing genotype indicator, then shuffle the data
+      // to remove the interspersed bytes.
+      low = _mm_or_si128(low, missing_mask);
+      hi = _mm_or_si128(hi, missing_mask);
+      low = _mm_or_si128(low, _mm_bsrli_si128(hi, 1));
+      low = _mm_abs_epi8(_mm_and_si128(low, missing_indicator));
+      low = _mm_shuffle_epi8(low, shuffle);
+      _mm_storeu_ps((float *) &missing[n >> 1], (__m128) low);
+
+      // reorganize the phase data into correctly sorted form. Phase data is
+      // initially every second byte across the m256 register. First convert to
+      // two, m128 registers, interleave those, then shuffle to correct order.
+      low = _mm256_extractf128_si256(phase_vec, 0);
+      hi = _mm256_extractf128_si256(phase_vec, 1);
+      
+      phase128 = _mm_or_si128(_mm_bsrli_si128(low, 1), hi);
+      phase128 = _mm_shuffle_epi8(phase128, shuffle);
+      _mm_storeu_ps((float *) &phase[n >> 1], (__m128)phase128);
+    }
+  }
+#elif defined(__aarch64__)
+  if ((type.type_size == 1) && (type.n_vals == 2)) {
+
+    int8x16_t initial, geno;
+    uint16x8_t wider;
+    int8x8_t shrunk;
+
+    uint8x16_t missing_mask = vdupq_n_u64(0x00ff00ff00ff00ff);
+    uint8x16_t mask_phase = vdupq_n_u64(0x0001000100010001);
+    uint8x16_t mask_geno = vdupq_n_u8(0xfe);
+    uint8x16_t sub = vdupq_n_u8(0x01);
+    int8x8_t missing_indicator = vdup_n_s8(-1);
+    
+    for (; n < (max_n - (max_n % 16)); n += 16) {
+      // load data from the array into SIMD registers.
+      initial = vld1q_s8((std::int8_t *)&buf[offset + n]);
+
+      geno = vandq_s8(initial, mask_geno);
+      geno = vsubq_s8(vshrq_n_s8(geno, 1), sub); // shift right to remove phase bit,
+                                                 // and subtract 1 to get allele
+      
+      // store genotypes as 32-bit ints, have to expand all values in turn
+      wider = vmovl_s8(vget_low_s8(geno));
+      vst1q_s32(&vals[n], vmovl_s16(vget_low_s16(wider)));
+      vst1q_s32(&vals[n + 4], vmovl_s16(vget_high_s16(wider)));
+
+      wider = vmovl_s8(vget_high_s8(geno));
+      vst1q_s32(&vals[n + 8], vmovl_s16(vget_low_s16(wider)));
+      vst1q_s32(&vals[n + 12], vmovl_s16(vget_high_s16(wider)));
+
+      // check for missing genotypes
+      geno = vandq_s8(geno, missing_mask);  // mask out every second value
+      shrunk = vmovn_s16(geno);  // narrow to remove interspersed bytes
+      shrunk = vabs_s8(vand_s8(shrunk, missing_indicator));  // check if value == -1
+      vst1_u8(&missing[n >> 1], shrunk);
+
+      // check if each sample has phased data
+      initial = vandq_s8(initial, mask_phase); // keep one mask bit per sample
+      shrunk = vmovn_s16(initial); // narrow to remove interspersed bytes
+      vst1_u8(&phase[n >> 1], shrunk);
+    }
+  }
+#endif
+  
+  offset += n;
+  std::uint32_t idx=n;
+  n = n / type.n_vals;
+  for (; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = parse_int(&buf[0], offset, type.type_size);
       phase[n] = vals[idx] & 0x00000001;

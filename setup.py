@@ -1,7 +1,9 @@
 
 import glob
 import io
+from pathlib import Path
 from setuptools import setup
+import subprocess
 import sys
 import os
 import platform
@@ -29,18 +31,23 @@ def flatten(*lists):
     return [str(x) for sublist in lists for x in sublist]
 
 def build_zlib():
-    ''' compile zlib code to object files for linking with bgen on windows
+    ''' compile zlib code to object files for linking
     
     Returns:
         list of paths to compiled object code
     '''
-    include_dirs = ['src/zlib/']
-    sources = list(glob.glob('src/zlib/*.c'))
-    extra_compile_args = ['/O2']
+    cur_dir = Path.cwd()
+    build_dir = cur_dir / 'zlib_build'
+    build_dir.mkdir(exist_ok=True)
+    os.chdir(build_dir)
+    cmd = str(cur_dir / 'src' / 'zlib-ng' / 'configure')
     
-    cc = new_compiler()
-    return cc.compile(sources, include_dirs=include_dirs,
-        extra_preargs=extra_compile_args)
+    # configure the build and then compile
+    subprocess.run([cmd, '--zlib-compat'])
+    subprocess.run(['make'])
+    os.chdir(cur_dir)
+    
+    return str(build_dir), str(build_dir / 'libz.so'), 
 
 def get_gzstream_path():
     ''' workaround for building gzstream on windows
@@ -67,6 +74,9 @@ def scrub_gzstream():
     directory from the include dirs, then clang complains about the missing
     gzstream.h. This is because gzstream.C identifies it's header file with
     angle brackets. Replacing the angle brackets in that line seems to work.
+    
+    We also need to do the same for the "#include <zlib.h>" in the gzstream 
+    header, since this now uses zlib-ng for better performance.
     '''
     with open(get_gzstream_path(), 'rt') as handle:
         lines = handle.readlines()
@@ -76,12 +86,19 @@ def scrub_gzstream():
             if line == '#include <gzstream.h>\n':
                 line = '#include "gzstream.h"\n'
             handle.write(line)
+    
+    # rejig the header file
+    gzstream_header_path = get_gzstream_path().rsplit('.')[0] + '.h'
+    with open(gzstream_header_path, 'rt') as handle:
+        lines = handle.readlines()
+    
+    with open(gzstream_header_path, 'wt') as handle:
+        for line in lines:
+            if line == '#include <zlib.h>\n':
+                line = '#include "zlib.h"\n'
+            handle.write(line)
 
-if sys.platform == 'win32':
-    zlib, libs = build_zlib(), []
-else:
-    zlib, libs = [], ['z']
-
+include_dir, zlib  = build_zlib()
 scrub_gzstream()
 
 ext = cythonize([
@@ -95,9 +112,8 @@ ext = cythonize([
             'src/info.cpp',
             'src/sample_data.cpp',
             'src/variant.cpp'],
-        extra_objects=zlib,
-        include_dirs=['src', 'src/zlib'],
-        libraries=libs,
+        extra_objects=[zlib],
+        include_dirs=['src', include_dir],
         language='c++'),
     ])
 

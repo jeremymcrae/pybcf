@@ -43,11 +43,16 @@ def build_zlib():
     cmd = str(cur_dir / 'src' / 'zlib-ng' / 'configure')
     
     # configure the build and then compile
-    subprocess.run([cmd, '--zlib-compat'])
+    os.environ['CFLAGS'] = '-fPIC'
+    subprocess.run([cmd, '--zlib-compat', '--static', '--64'])
     subprocess.run(['make'])
     os.chdir(cur_dir)
     
-    return str(build_dir), str(build_dir / 'libz.so'), 
+    ignore = ['example.o', 'makecrct.o', 'makefixed.o', 'maketrees.o', 'minigzip.o']
+    objs = [str(x) for x in build_dir.glob('*.o') if x.name not in ignore]
+    generic = [str(x) for x in (build_dir / 'arch' / 'generic').glob('*.o') if x.name not in ignore]
+    
+    return str(build_dir), objs + generic
 
 def get_gzstream_path():
     ''' workaround for building gzstream on windows
@@ -112,7 +117,7 @@ ext = cythonize([
             'src/info.cpp',
             'src/sample_data.cpp',
             'src/variant.cpp'],
-        extra_objects=[zlib],
+        extra_objects=zlib,
         include_dirs=['src', include_dir],
         language='c++'),
     ])

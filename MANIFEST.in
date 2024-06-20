@@ -8,5 +8,7 @@ include src/*.h
 include src/*.cpp
 include src/gzstream/gzstream.h
 include src/gzstream/gzstream.C
-include src/zlib/*.h
-include src/zlib/*.c
+include src/zlib-ng/*.h
+include src/zlib-ng/*.c
+recursive-include src/zlib-ng/arch/*.h
+recursive-include src/zlib-ng/arch/*.c

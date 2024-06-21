@@ -1,6 +1,7 @@
 
 
 #include <sstream>
+#include <algorithm>
 
 #include "header.h"
 
@@ -114,6 +115,70 @@ Header::Header(std::string & text) {
     }
   }
   
+}
+
+std::vector<std::string> Header::get_contigs() {
+  std::vector<std::uint32_t> keys;
+  keys.reserve(contigs.size());
+  for (auto& it : contigs) {
+      keys.push_back(it.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  
+  std::vector<std::string> vals;
+  vals.reserve(contigs.size());
+  for (auto & k : keys) {
+    vals.push_back(contigs[k].id);
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_info() {
+  std::vector<std::uint32_t> keys;
+  keys.reserve(info.size());
+  for (auto& it : info) {
+      keys.push_back(it.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  
+  std::vector<std::string> vals;
+  vals.reserve(info.size());
+  for (auto & k : keys) {
+    vals.push_back(info[k].id);
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_filters() {
+  std::vector<std::uint32_t> keys;
+  keys.reserve(filters.size());
+  for (auto& it : filters) {
+      keys.push_back(it.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  
+  std::vector<std::string> vals;
+  vals.reserve(filters.size());
+  for (auto & k : keys) {
+    vals.push_back(filters[k].id);
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_formats() {
+  std::vector<std::uint32_t> keys;
+  keys.reserve(format.size());
+  for (auto& it : format) {
+      keys.push_back(it.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  
+  std::vector<std::string> vals;
+  vals.reserve(format.size());
+  for (auto & k : keys) {
+    vals.push_back(format[k].id);
+  }
+  return vals;
 }
 
 }

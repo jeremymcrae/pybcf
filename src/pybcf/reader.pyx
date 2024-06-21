@@ -20,8 +20,13 @@ cdef extern from 'bcf.h' namespace 'bcf':
 cdef extern from 'header.h' namespace 'bcf':
     cdef cppclass Header:
         # declare class constructor and methods
+        Header() except +
         Header(string text) except +
         vector[string] samples
+        vector[string] get_contigs()
+        vector[string] get_info()
+        vector[string] get_filters()
+        vector[string] get_formats()
 
 cdef extern from 'info.h' namespace 'bcf':
     cdef struct InfoType:
@@ -75,6 +80,60 @@ cdef extern from 'variant.h' namespace 'bcf':
         Info info
         SampleData sample_data
 
+cdef class BcfHeader:
+    cdef Header * thisptr
+    cdef list _samples, _contigs, _info, _filters, _formats
+    cdef bool samples_done, contigs_done, info_done, filters_done, formats_done
+    cdef set_data(self, Header * header):
+        ''' assigns Header to python class '''
+        self.thisptr = header
+        samples_ready = False
+    
+    @property
+    def samples(self):
+        ''' return list of sample IDs in the BCF
+        '''
+        if not self.samples_done:
+            self._samples = [x.decode('utf8') for x in self.thisptr.samples]
+        self.samples_done = True
+        return self._samples
+    
+    @property
+    def contigs(self):
+        ''' return list of contigs in the BCF
+        '''
+        if not self.contigs_done:
+            self._contigs = [x.decode('utf8') for x in self.thisptr.get_contigs()]
+        self.contigs_done = True
+        return self._contigs
+    
+    @property
+    def filters(self):
+        ''' return list of filters in the BCF
+        '''
+        if not self.filters_done:
+            self._filters = [x.decode('utf8') for x in self.thisptr.get_filters()]
+        self.filters_done = True
+        return self._filters
+    
+    @property
+    def formats(self):
+        ''' return list of formats in the BCF
+        '''
+        if not self.formats_done:
+            self._formats = [x.decode('utf8') for x in self.thisptr.get_formats()]
+        self.formats_done = True
+        return self._formats
+    
+    @property
+    def info(self):
+        ''' return list of info in the BCF
+        '''
+        if not self.info_done:
+            self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
+        self.info_done = True
+        return self._info
+
 cdef class BcfInfo:
     cdef Info * thisptr
     cdef set_data(self, Info * info):
@@ -89,11 +148,17 @@ cdef class BcfInfo:
         except ValueError:
             return False
     
+    def keys(self):
+        return (x.decode('utf8') for x in self.thisptr.get_keys())
+    
+    def values(self):
+        return (self[x] for x in self.keys())
+    
     def __iter__(self):
         ''' get the info keys for a variant
         '''
-        for x in self.thisptr.get_keys():
-            yield x.decode('utf8')
+        for x in self.keys():
+            yield x
     
     def __getitem__(self, _key):
         if not self.__contains__(_key):
@@ -132,11 +197,17 @@ cdef class BcfSampleData:
         except ValueError:
             return False
     
+    def keys(self):
+        return (x.decode('utf8') for x in self.thisptr.get_keys())
+    
+    def values(self):
+        return (self[x] for x in self.keys())
+    
     def __iter__(self):
         ''' get the format keys for a variant
         '''
-        for x in self.thisptr.get_keys():
-            yield x.decode('utf8')
+        for x in self.keys():
+            yield x
     
     def __getitem__(self, _key):
         if not self.__contains__(_key):
@@ -250,8 +321,8 @@ cdef class BcfReader:
     '''
     cdef BCF * thisptr
     cdef string path
-    cdef bool is_open, samples_ready
-    cdef list _samples
+    cdef bool is_open
+    cdef BcfHeader _header
     def __cinit__(self, path):
         path = str(path) if isinstance(path, Path) else path
         self.path = path.encode('utf8')
@@ -259,6 +330,8 @@ cdef class BcfReader:
         logging.debug(f'opening BcfReader from {self.path.decode("utf")}')
         self.thisptr = new BCF(self.path)
         self.is_open = True
+        self._header = BcfHeader()
+        self._header.set_data(&self.thisptr.header)
     
     def __dealloc__(self):
         if self.is_open:
@@ -283,17 +356,13 @@ cdef class BcfReader:
     def header(self):
       ''' get header info from bcf file
       '''
-      raise NotImplementedError
+      return self._header
     
     @property
     def samples(self):
       ''' get list of samples in the bcf file
       '''
-      if not self.samples_ready:
-        _samples = [x.decode('utf8') for x in self.thisptr.header.samples]
-        self.samples_ready = True
-    
-      return _samples
+      return self.header.samples
     
     def fetch(self, chrom, start=None, stop=None):
         ''' fetches all variants within a genomic region

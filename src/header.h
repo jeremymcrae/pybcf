@@ -44,6 +44,10 @@ public:
   std::unordered_map<std::uint32_t, FilterField> filters;
   std::unordered_map<std::uint32_t, FormatField> format;
   std::vector<std::string> samples={};
+  std::vector<std::string> get_contigs();
+  std::vector<std::string> get_info();
+  std::vector<std::string> get_filters();
+  std::vector<std::string> get_formats();
 };
 
 }

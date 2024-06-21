@@ -52,6 +52,11 @@ def build_zlib():
     os.chdir(cur_dir)
     
     objs = [str(build_dir / 'libz.a')]
+    if sys.platform == 'win32':
+        for path in build_dir.iterdir():
+            print(path)
+        objs = [str(build_dir / 'libz.lib')]
+    
     return str(build_dir), objs
 
 def get_gzstream_path():

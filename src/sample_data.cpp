@@ -195,8 +195,6 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 #endif
   
   std::uint32_t missing_indicator = 1 << ((8 * type.type_size) - 1);
-  std::uint32_t missed = 0;
-  std::uint32_t match;
   offset += n;
   std::uint32_t idx=n;
   n = n / type.n_vals;
@@ -206,10 +204,6 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       if (vals[idx] == missing_indicator) {
         vals[idx] = 0;  // convert missing values to missing genotypes
       }
-      // match = vals[idx] & missing_indicator;
-      // missed = match & 
-      
-      
       phase[n] = vals[idx] & 0x00000001;
       vals[idx] = (vals[idx] >> 1) - 1;
       // this only checks on genotype status, but this should apply to other

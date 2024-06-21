@@ -1,6 +1,4 @@
 
-#include <iostream>
-
 #include <cstring>
 
 #include "sample_data.h"
@@ -12,6 +10,7 @@
 
 #if defined(__aarch64__)
   #include <arm_neon.h>
+  #include <arm_mve.h>
 #endif
 
 namespace bcf {
@@ -94,8 +93,8 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
     __m128i missing_geno = _mm_set_epi8(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
     __m256i missing_geno256 = _mm256_set_epi32(0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
                                                0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
-    __m256i missing_indicator = _mm256_set_epi32(0x80808080, 0x80808080, 0x80808080, 0x80808080,
-                                                 0x80808080, 0x80808080, 0x80808080, 0x80808080);
+    __m256i missing_indicator = _mm256_set_epi32(0x81818181, 0x81818181, 0x81818181, 0x81818181,
+                                                 0x81818181, 0x81818181, 0x81818181, 0x81818181);
     __m128i shuffle = _mm_set_epi8(0, 2, 4, 6, 8, 10, 12, 14, 17, 3, 5, 7, 9, 11, 13, 15);
     
     for (; n < (max_n - (max_n % 32)); n += 32) {
@@ -105,10 +104,10 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
       
       // account for missing values (due to different ploidy between samples)
-      matches = _mm256_and_si256(initial, missing_indicator);            // find missing values
-      miss_vals = _mm256_and_si256(matches, missing_geno256);            // set values for missing
+      matches = _mm256_cmpeq_epi8(initial, missing_indicator);           // find missing values
+      miss_vals = _mm256_and_si256(matches, missing_geno256);            // set new values for missing
       geno = (__m256i) _mm256_andnot_ps((__m256)matches, (__m256)geno);  // erase original missing values
-      geno = (__m256i)_mm256_or_ps((__m256)geno, (__m256)miss_vals);    // swap in new missing values
+      geno = (__m256i) _mm256_or_ps((__m256)geno, (__m256)miss_vals);    // swap in new missing values
 
       // expand the first 8 values to 32-bits, and store
       low = _mm256_extractf128_si256(geno, 0);
@@ -147,9 +146,10 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 #elif defined(__aarch64__)
   if ((type.type_size == 1) && (type.n_vals == 2)) {
 
-    int8x16_t initial, geno, matches, miss_vals;
+    int8x16_t initial, geno;
     uint16x8_t wider;
     int8x8_t shrunk;
+    mve_pred16_t matches;
 
     uint8x16_t missing_mask = vdupq_n_u64(0x00ff00ff00ff00ff);
     uint8x16_t mask_phase = vdupq_n_u64(0x0001000100010001);
@@ -168,10 +168,8 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
                                                  // and subtract 1 to get allele
 
       // account for missing values (due to different ploidy between samples)
-      matches = vandq_s8(initial, missing_indicator);  // find missing values
-      miss_vals = vandq_s8(matches, missing_geno16);   // set values for missing
-      geno = vandq_s8(geno vnegq_s8(matches));         // erase original missing values
-      geno = vorrq_s8(geno, miss_vals);                // swap in new missing values
+      matches = vcmpeqq_s8(initial, missing_indicator);  // find missing values
+      geno = vpselq_s8(missing_geno16, geno, matches); // swap in new missing values
 
       // store genotypes as 32-bit ints, have to expand all values in turn
       wider = vmovl_s8(vget_low_s8(geno));
@@ -197,6 +195,8 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 #endif
   
   std::uint32_t missing_indicator = 1 << ((8 * type.type_size) - 1);
+  std::uint32_t missed = 0;
+  std::uint32_t match;
   offset += n;
   std::uint32_t idx=n;
   n = n / type.n_vals;
@@ -206,6 +206,10 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       if (vals[idx] == missing_indicator) {
         vals[idx] = 0;  // convert missing values to missing genotypes
       }
+      // match = vals[idx] & missing_indicator;
+      // missed = match & 
+      
+      
       phase[n] = vals[idx] & 0x00000001;
       vals[idx] = (vals[idx] >> 1) - 1;
       // this only checks on genotype status, but this should apply to other

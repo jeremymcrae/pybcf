@@ -37,22 +37,22 @@ def build_zlib():
         list of paths to compiled object code
     '''
     cur_dir = Path.cwd()
+    source_dir = cur_dir / 'src' / 'zlib-ng'
     build_dir = cur_dir / 'zlib_build'
     build_dir.mkdir(exist_ok=True)
     os.chdir(build_dir)
-    cmd = str(cur_dir / 'src' / 'zlib-ng' / 'configure')
-    
-    # configure the build and then compile
-    os.environ['CFLAGS'] = '-fPIC'
-    subprocess.run([cmd, '--zlib-compat', '--static', '--64'])
-    subprocess.run(['make'])
+   
+    cmd = ['cmake', '-S', source_dir, '-B', build_dir,
+        '-DZLIB_COMPAT=ON',
+        '-DZLIB_ENABLE_TESTS=OFF',
+        '-DCMAKE_C_FLAGS="-fPIC"',
+    ]
+    subprocess.run(cmd)
+    subprocess.run(['cmake', '--build', build_dir, '--config', 'Release'])
     os.chdir(cur_dir)
     
-    ignore = ['example.o', 'makecrct.o', 'makefixed.o', 'maketrees.o', 'minigzip.o']
-    objs = [str(x) for x in build_dir.glob('*.o') if x.name not in ignore]
-    generic = [str(x) for x in (build_dir / 'arch' / 'generic').glob('*.o') if x.name not in ignore]
-    
-    return str(build_dir), objs + generic
+    objs = [str(build_dir / 'libz.a')]
+    return str(build_dir), objs
 
 def get_gzstream_path():
     ''' workaround for building gzstream on windows

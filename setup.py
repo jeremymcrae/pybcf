@@ -41,11 +41,15 @@ def build_zlib():
     build_dir = cur_dir / 'zlib_build'
     build_dir.mkdir(exist_ok=True)
     os.chdir(build_dir)
-   
+    
+    flag = '-fPIC'
+    if sys.platform == 'win32':
+        flag = '/fPIC'
+    
     cmd = ['cmake', '-S', source_dir, '-B', build_dir,
         '-DZLIB_COMPAT=ON',
         '-DZLIB_ENABLE_TESTS=OFF',
-        '-DCMAKE_C_FLAGS="-fPIC"',
+        f'-DCMAKE_C_FLAGS="{flag}"',
     ]
     subprocess.run(cmd)
     subprocess.run(['cmake', '--build', build_dir, '--config', 'Release'])
@@ -53,8 +57,6 @@ def build_zlib():
     
     objs = [str(build_dir / 'libz.a')]
     if sys.platform == 'win32':
-        for path in build_dir.iterdir():
-            print(path)
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib')]
     
     return str(build_dir), objs

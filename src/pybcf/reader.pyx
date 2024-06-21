@@ -31,6 +31,7 @@ cdef extern from 'info.h' namespace 'bcf':
     cdef cppclass Info:
         # declare class constructor and methods
         Info() except +
+        vector[string] get_keys()
         InfoType get_type(string &) except +
         int32_t get_int(uint32_t offset)
         float get_float(uint32_t offset)
@@ -50,6 +51,7 @@ cdef extern from 'sample_data.h' namespace 'bcf':
     cdef cppclass SampleData:
         # declare class constructor and methods
         SampleData() except +
+        vector[string] get_keys()
         FormatType get_type(string &) except +
         vector[int32_t] get_ints(FormatType &)
         vector[float] get_floats(FormatType &)
@@ -87,6 +89,12 @@ cdef class BcfInfo:
         except ValueError:
             return False
     
+    def __iter__(self):
+        ''' get the info keys for a variant
+        '''
+        for x in self.thisptr.get_keys():
+            yield x.decode('utf8')
+    
     def __getitem__(self, _key):
         if not self.__contains__(_key):
             raise KeyError(f'unknown INFO field: {_key}')
@@ -123,6 +131,12 @@ cdef class BcfSampleData:
             return True
         except ValueError:
             return False
+    
+    def __iter__(self):
+        ''' get the format keys for a variant
+        '''
+        for x in self.thisptr.get_keys():
+            yield x.decode('utf8')
     
     def __getitem__(self, _key):
         if not self.__contains__(_key):

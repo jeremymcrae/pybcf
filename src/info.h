@@ -39,6 +39,7 @@ class Info {
 public:
   Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _n_info);
   Info() {};
+  std::vector<std::string> get_keys();
   InfoType get_type(std::string &key);
   
   std::int32_t get_int(uint32_t offset) {return scalar_ints[offset];};

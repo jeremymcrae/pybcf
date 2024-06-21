@@ -46,6 +46,14 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   }
 }
 
+std::vector<std::string> SampleData::get_keys() {
+  std::vector<std::string> key_names;
+  for (auto & x : keys) {
+    key_names.push_back(x.first);
+  }
+  return key_names;
+}
+
 FormatType SampleData::get_type(std::string &key) {
   if (keys.count(key) == 0) {
     throw std::invalid_argument("no entries for " + key + " in data");

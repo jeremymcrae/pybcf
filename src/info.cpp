@@ -14,6 +14,14 @@ Info::Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _
   n_info = _n_info;
 }
 
+std::vector<std::string> Info::get_keys() {
+  std::vector<std::string> key_vals;
+  for (auto & x : keys) {
+    key_vals.push_back(x.first);
+  }
+  return key_vals;
+}
+
 void Info::parse() {
   std::uint32_t buf_idx = offset;
   Typed type_val;

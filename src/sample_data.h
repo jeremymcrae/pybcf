@@ -30,6 +30,7 @@ class SampleData {
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};
+  std::vector<std::string> get_keys();
   FormatType get_type(std::string &key);
   std::vector<std::int32_t> get_ints(FormatType & type);
   std::vector<float> get_floats(FormatType & type);

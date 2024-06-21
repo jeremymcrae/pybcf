@@ -7,3 +7,5 @@ src/pybcf/*.so
 *.egg
 *.egg-info/
 *.DS_Store
+*zlib_build/
+configure.log

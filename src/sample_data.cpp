@@ -10,7 +10,6 @@
 
 #if defined(__aarch64__)
   #include <arm_neon.h>
-  #include <arm_mve.h>
 #endif
 
 namespace bcf {
@@ -82,7 +81,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   std::uint32_t n=0;
 #if defined(__x86_64__)
   if (__builtin_cpu_supports("avx2") && (type.n_vals == 2) && (type.type_size == 1)) {
-    __m256i initial, geno, phase_vec, matches, miss_vals;
+    __m256i initial, geno, phase_vec, missed;
     __m128i low, hi, phase128;
     __m256i mask_phase = _mm256_set_epi32(0x01000100, 0x01000100, 0x01000100, 0x01000100,
                                        0x01000100, 0x01000100, 0x01000100, 0x01000100);
@@ -91,8 +90,6 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
     __m256i sub = _mm256_set_epi64x(0x0101010101010101, 0x0101010101010101, 0x0101010101010101, 0x0101010101010101);
     __m128i missing_mask = _mm_set_epi32(0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff);
     __m128i missing_geno = _mm_set_epi8(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
-    __m256i missing_geno256 = _mm256_set_epi32(0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
-                                               0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff);
     __m256i missing_indicator = _mm256_set_epi32(0x81818181, 0x81818181, 0x81818181, 0x81818181,
                                                  0x81818181, 0x81818181, 0x81818181, 0x81818181);
     __m128i shuffle = _mm_set_epi8(0, 2, 4, 6, 8, 10, 12, 14, 17, 3, 5, 7, 9, 11, 13, 15);
@@ -104,10 +101,9 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
       
       // account for missing values (due to different ploidy between samples)
-      matches = _mm256_cmpeq_epi8(initial, missing_indicator);           // find missing values
-      miss_vals = _mm256_and_si256(matches, missing_geno256);            // set new values for missing
-      geno = (__m256i) _mm256_andnot_ps((__m256)matches, (__m256)geno);  // erase original missing values
-      geno = (__m256i) _mm256_or_ps((__m256)geno, (__m256)miss_vals);    // swap in new missing values
+      missed = _mm256_cmpeq_epi8(initial, missing_indicator);           // find missing values
+      geno = (__m256i) _mm256_andnot_ps((__m256)missed, (__m256)geno);  // erase original missing values
+      geno = (__m256i) _mm256_or_ps((__m256)geno, (__m256)missed);      // swap in new missing values
 
       // expand the first 8 values to 32-bits, and store
       low = _mm256_extractf128_si256(geno, 0);
@@ -146,17 +142,15 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 #elif defined(__aarch64__)
   if ((type.type_size == 1) && (type.n_vals == 2)) {
 
-    int8x16_t initial, geno;
+    int8x16_t initial, geno, missed;
     uint16x8_t wider;
     int8x8_t shrunk;
-    mve_pred16_t matches;
 
     uint8x16_t missing_mask = vdupq_n_u64(0x00ff00ff00ff00ff);
     uint8x16_t mask_phase = vdupq_n_u64(0x0001000100010001);
     uint8x16_t mask_geno = vdupq_n_u8(0xfe);
     uint8x16_t sub = vdupq_n_u8(0x01);
     int8x8_t missing_geno = vdup_n_s8(-1);
-    int8x16_t missing_geno16 = vdupq_n_s8(-1);
     int8x16_t missing_indicator = vdupq_n_s8(0x80);
     
     for (; n < (max_n - (max_n % 16)); n += 16) {
@@ -168,8 +162,9 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
                                                  // and subtract 1 to get allele
 
       // account for missing values (due to different ploidy between samples)
-      matches = vcmpeqq_s8(initial, missing_indicator);  // find missing values
-      geno = vpselq_s8(missing_geno16, geno, matches); // swap in new missing values
+      missed = vceqq_s8(initial, missing_indicator);  // find and set missing values
+      geno = vandq_s8(geno, vmvnq_s8(missed));         // erase original missing values
+      geno = vorrq_s8(geno, missed);                   // swap in new missing values
 
       // store genotypes as 32-bit ints, have to expand all values in turn
       wider = vmovl_s8(vget_low_s8(geno));

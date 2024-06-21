@@ -196,13 +196,14 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   }
 #endif
   
+  std::uint32_t missing_indicator = 1 << ((8 * type.type_size) - 1);
   offset += n;
   std::uint32_t idx=n;
   n = n / type.n_vals;
   for (; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
       vals[idx] = parse_int(&buf[0], offset, type.type_size);
-      if (vals[idx] == 0x00000080) {
+      if (vals[idx] == missing_indicator) {
         vals[idx] = 0;  // convert missing values to missing genotypes
       }
       phase[n] = vals[idx] & 0x00000001;

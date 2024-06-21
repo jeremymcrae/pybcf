@@ -58,6 +58,8 @@ def build_zlib():
     
     objs = [str(build_dir / 'libz.a')]
     if sys.platform == 'win32':
+        for x in (build_dir / 'Release').iterdir():
+            print(x)
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib')]
     
     return str(build_dir), objs

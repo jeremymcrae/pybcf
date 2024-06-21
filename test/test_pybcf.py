@@ -52,6 +52,8 @@ class TestBcfReader(unittest.TestCase):
     '''
     
     def test_without_genotypes(self):
+        ''' check this package matches pysam for info fields for BCF without genotypes
+        '''
         path = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
         vcf_pysam = VariantFile(path)
         vcf_pybcf = BcfReader(path)
@@ -70,6 +72,8 @@ class TestBcfReader(unittest.TestCase):
                 self.assertEqual(var_pysam.info[field], var_pybcf.info[field],)
     
     def test_with_genotypes(self):
+        ''' check this package matches pysam for info fields for BCF
+        '''
         path = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
         vcf_pysam = VariantFile(path)
         vcf_pybcf = BcfReader(path)
@@ -95,4 +99,27 @@ class TestBcfReader(unittest.TestCase):
                 
                 self.assertTrue((is_nan_pysam == is_nan_pybcf).all())
                 self.assertTrue((geno_pybcf[~is_nan_pysam] == geno_pysam[~is_nan_pysam]).all())
+    
+    def test_header_access(self):
+        ''' check this package matches pysam for the header fields
+        '''
+        path = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
+        vcf_pysam = VariantFile(path)
+        vcf_pybcf = BcfReader(path)
+        
+        self.assertEqual(list(vcf_pysam.header.contigs), vcf_pybcf.header.contigs)
+        self.assertEqual(list(vcf_pysam.header.info), vcf_pybcf.header.info)
+        self.assertEqual(list(vcf_pysam.header.filters), vcf_pybcf.header.filters)
+        self.assertEqual(list(vcf_pysam.header.formats), vcf_pybcf.header.formats)
+        self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
+        
+        path = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
+        vcf_pysam = VariantFile(path)
+        vcf_pybcf = BcfReader(path)
+        
+        self.assertEqual(list(vcf_pysam.header.contigs), vcf_pybcf.header.contigs)
+        self.assertEqual(list(vcf_pysam.header.info), vcf_pybcf.header.info)
+        self.assertEqual(list(vcf_pysam.header.filters), vcf_pybcf.header.filters)
+        self.assertEqual(list(vcf_pysam.header.formats), vcf_pybcf.header.formats)
+        self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
     

@@ -55,7 +55,7 @@ def build_zlib():
     if sys.platform == 'win32':
         for path in build_dir.iterdir():
             print(path)
-        objs = [str(build_dir / 'libz.lib')]
+        objs = [str(build_dir / 'Release' / 'zlibstatic.lib')]
     
     return str(build_dir), objs
 

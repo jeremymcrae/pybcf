@@ -91,7 +91,7 @@ cdef class BcfHeader:
     
     @property
     def samples(self):
-        ''' return list of sample IDs in the BCF
+        ''' list of sample IDs in the BCF
         '''
         if not self.samples_done:
             self._samples = [x.decode('utf8') for x in self.thisptr.samples]
@@ -100,7 +100,7 @@ cdef class BcfHeader:
     
     @property
     def contigs(self):
-        ''' return list of contigs in the BCF
+        ''' list of possible contigs in the BCF
         '''
         if not self.contigs_done:
             self._contigs = [x.decode('utf8') for x in self.thisptr.get_contigs()]
@@ -109,7 +109,7 @@ cdef class BcfHeader:
     
     @property
     def filters(self):
-        ''' return list of filters in the BCF
+        ''' list of possible filters in the BCF
         '''
         if not self.filters_done:
             self._filters = [x.decode('utf8') for x in self.thisptr.get_filters()]
@@ -118,7 +118,7 @@ cdef class BcfHeader:
     
     @property
     def formats(self):
-        ''' return list of formats in the BCF
+        ''' list of pssible format fields per variant
         '''
         if not self.formats_done:
             self._formats = [x.decode('utf8') for x in self.thisptr.get_formats()]
@@ -127,7 +127,7 @@ cdef class BcfHeader:
     
     @property
     def info(self):
-        ''' return list of info in the BCF
+        ''' list of possible info fields per variant
         '''
         if not self.info_done:
             self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
@@ -243,7 +243,7 @@ cdef class BcfSampleData:
     
     @property
     def missing(self):
-        ''' get indices of samples with missing genotype data'''
+        ''' indices of samples with missing genotype data'''
         if not self.thisptr.phase_checked:
             self['GT']
         
@@ -252,7 +252,7 @@ cdef class BcfSampleData:
     
     @property
     def phased(self):
-        ''' determine whether genotypes are phased '''
+        ''' whether genotypes are phased '''
         if not self.thisptr.phase_checked:
             self['GT']
         
@@ -276,44 +276,68 @@ cdef class BcfVariant:
     
     @property
     def chrom(self):
+        ''' chromosome/contig name
+        '''
         return self.thisptr.chrom.decode('utf8')
     
     @property
+    def contig(self):
+        ''' alias for .chrom attribute
+        '''
+        return self.chrom
+    
+    @property
     def pos(self):
+        ''' variant nucleotide position
+        '''
         return self.thisptr.pos
     
     @property
     def ref(self):
+        ''' reference allele
+        '''
         return self.thisptr.ref.decode('utf8')
     
     @property
     def alts(self):
+        ''' list of alternate alleles
+        '''
         if self.thisptr.alts.size() == 0:
             return None
         return tuple(x.decode('utf8') for x in self.thisptr.alts)
     
     @property
     def id(self):
+        ''' variant ID
+        '''
         if self.thisptr.varid.size() == 0:
             return None
         return self.thisptr.varid.decode()
     
     @property
     def qual(self):
+        ''' variant quality score (or None)
+        '''
         if np.isnan(self.thisptr.qual):
             return None
         return self.thisptr.qual
     
     @property
     def filter(self):
+        ''' list of filter information
+        '''
         return [x.decode('utf8') for x in self.thisptr.filters]
     
     @property
     def info(self):
+        ''' variant info data
+        '''
         return self._info
     
     @property
     def samples(self):
+        ''' variant sample data
+        '''
         return self._samples
 
 cdef class BcfReader:
@@ -354,13 +378,13 @@ cdef class BcfReader:
     
     @property
     def header(self):
-      ''' get header info from bcf file
+      ''' header info from bcf file
       '''
       return self._header
     
     @property
     def samples(self):
-      ''' get list of samples in the bcf file
+      ''' list of samples in the bcf file
       '''
       return self.header.samples
     

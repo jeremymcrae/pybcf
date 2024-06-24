@@ -28,7 +28,6 @@ class Variant {
 public:
   Variant(igzstream & infile, Header & header);
   Variant() {};
-  float * genotypes();
   
   std::string chrom="";
   std::int32_t pos=0;

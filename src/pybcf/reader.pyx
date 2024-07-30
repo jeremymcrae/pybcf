@@ -228,7 +228,12 @@ cdef class BcfSampleData:
             arr = np.asarray(<int32_t [:n_vals]>&v_int[0])
             if n_per_sample > 1:
                 arr = np.reshape(arr, (-1, n_per_sample))
-            return arr.copy()
+            
+            mis_val = -1 if key == b'GT' else -(2 ** 31)
+            missing = arr == mis_val
+            arr = arr.astype(float)
+            arr[missing] = float('nan')
+            return arr
         elif fmt_type.data_type == 5:
             v_float = self.thisptr.get_floats(fmt_type)
             arr = np.asarray(<float [:n_vals]>&v_float[0])
@@ -240,15 +245,6 @@ cdef class BcfSampleData:
             return self.thisptr.get_strings(fmt_type)
         
         raise ValueError(f'unknown datatype: {fmt_type}')
-    
-    @property
-    def missing(self):
-        ''' indices of samples with missing genotype data'''
-        if not self.thisptr.phase_checked:
-            self['GT']
-        
-        arr = np.asarray(<uint8_t [:self.thisptr.missing.size()]>&self.thisptr.missing[0])
-        return arr.astype(np.bool_)
     
     @property
     def phased(self):

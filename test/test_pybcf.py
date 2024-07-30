@@ -28,7 +28,7 @@ def get_pybcf_probs(var, alt_indices):
     
     # count alts
     is_ref = (geno == 0).all(axis=1)
-    is_nan = geno[:, 0] == -1
+    is_nan = np.isnan(geno[:, 0])
     hom_ref_idx = np.where(is_ref)
     is_nan_idx = np.where(is_nan)
     

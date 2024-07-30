@@ -75,15 +75,27 @@ public:
 /// @return value as 32-bit int
 inline std::int32_t parse_int(char * buf, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val=0;
+  // There appear to be two types of missing values: 1) the official missing
+  // value (0x80, 0x8000, 0x80000000), as well as another value offset by one.
+  // I think distingushes between a sample lacking data, versus no data available
+  // because it's not possible to have any more values. As an example with allele
+  // depth, samples with only reference alleles cannot have alt allele depths, so
+  // are assigned the "not_recorded" value at the alt allele positions.
+  // I couldn't find any documention about this in the BCF format spec though.
+  std::int32_t missing = 1 << ((type_size << 3) - 1); // 8bit: 0x80, 16bit: 0x8000 etc
+  std::int32_t not_recorded = missing | 1; // 8bit: 0x81, 16bit: 0x8001, 32bit: 0x80000001
   if (type_size == 1) {
     val = *reinterpret_cast<std::int8_t *>(&buf[idx]) & 0x000000FF;
-    if (val == 0x80) { val = 0x80000000; }  // handle missing data value
   } else if (type_size == 2) {
     val = *reinterpret_cast<std::int16_t *>(&buf[idx]) & 0x0000FFFF;
-    if (val == 0x8000) { val = 0x80000000; }  // handle missing data value
   } else {
     val = *reinterpret_cast<std::int32_t *>(&buf[idx]);
   }
+  // handle missing data values
+  if ((val == missing) || (val == not_recorded)) {
+    val = 0x80000000;
+  }
+  
   idx += type_size;
   return val;
 }

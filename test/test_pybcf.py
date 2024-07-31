@@ -66,6 +66,7 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(var_pysam.qual, var_pybcf.qual)
             self.assertEqual(list(var_pysam.filter), var_pybcf.filter)
             self.assertEqual(var_pysam.id, var_pybcf.id)
+            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
             
             # check all the info fields match
             for field in var_pysam.info:
@@ -85,6 +86,7 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(var_pysam.qual, var_pybcf.qual)
             self.assertEqual(list(var_pysam.filter), var_pybcf.filter)
             self.assertEqual(var_pysam.id, var_pybcf.id)
+            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
             
             # check all the info fields match
             for field in var_pysam.info:

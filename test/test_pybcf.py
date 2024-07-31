@@ -124,4 +124,47 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual(list(vcf_pysam.header.filters), vcf_pybcf.header.filters)
         self.assertEqual(list(vcf_pysam.header.formats), vcf_pybcf.header.formats)
         self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
-    
+
+class TestBcfv2_2(unittest.TestCase):
+    ''' class to work through a BCFv2.2 file with some edge cases in data fields
+    '''
+    def test_missing_values(self):
+        ''' check we can work with BCFs version 2.2
+        '''
+        path = Path(__file__).parent / 'data' / 'bcfv2.2.bcf'
+        vcf_pysam = VariantFile(path)
+        vcf_pybcf = BcfReader(path)
+        
+        for var_pysam, var_pybcf in zip(vcf_pysam, vcf_pybcf):
+            # check all the info fields match
+            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
+            for field in var_pysam.info:
+                val = True if var_pysam.info[field] is None else var_pysam.info[field]
+                self.assertEqual(val, var_pybcf.info[field])
+            
+            self.assertEqual(set(var_pysam.format), set(var_pybcf.samples))
+            for key in var_pybcf.samples:
+                data_pybcf = var_pybcf.samples[key]
+                data_pysam = [x[key] for x in var_pysam.samples.itervalues()]
+                
+                if isinstance(data_pybcf, list):
+                    for x, y in zip(data_pysam, data_pybcf):
+                        if isinstance(x, str) and isinstance(y, tuple):
+                            assert len(y) == 1
+                            y = y[0]
+                        self.assertEqual(x, y)
+                
+                # pysam and pybcf represent the data differently. pysam returns
+                # a ragged list, whereas pybcf inserts nan values in the gaps
+                elif len(data_pybcf.shape) > 1:
+                    lens_pybcf = (~np.isnan(data_pybcf)).sum(axis=1)
+                    lens_pysam = np.array([len(x) for x in data_pysam])
+                    self.assertTrue((lens_pybcf == lens_pysam).all())
+                    data_pybcf = [tuple(x[~np.isnan(x)].tolist()) for x in data_pybcf]
+                    self.assertEqual(data_pybcf, data_pysam)
+                else:
+                    data_pysam = np.array(data_pysam)
+                    if len(data_pysam.shape) > 1 and max(len(x) for x in data_pysam):
+                        data_pysam = data_pysam.T
+                    self.assertTrue((data_pybcf == data_pysam).all())
+                

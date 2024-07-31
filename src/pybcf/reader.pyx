@@ -242,7 +242,7 @@ cdef class BcfSampleData:
             return arr.copy()
         elif fmt_type.data_type == 7:
             # string type
-            return [x.decode().split(',') for x in self.thisptr.get_strings(fmt_type)]
+            return [tuple(x.decode().split(',')) for x in self.thisptr.get_strings(fmt_type)]
         
         raise ValueError(f'unknown datatype: {fmt_type}')
     

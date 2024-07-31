@@ -1,8 +1,10 @@
 #ifndef BCF_TYPES_H
 #define BCF_TYPES_H
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include "gzstream/gzstream.h"
 
@@ -118,6 +120,7 @@ inline std::string parse_string(const char * buf, std::uint32_t & idx, std::uint
   val.resize(size);
   std::memcpy(&val[0], &buf[idx], size);
   idx += size;
+  val.erase(std::find(val.begin(), val.end(), '\0'), val.end());
   return val;
 }
 

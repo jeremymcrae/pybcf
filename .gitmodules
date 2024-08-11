@@ -1,6 +1,3 @@
-[submodule "src/gzstream"]
-	path = src/gzstream
-	url = https://github.com/kanedo/gzstream
 [submodule "src/zlib-ng"]
 	path = src/zlib-ng
 	url = https://github.com/zlib-ng/zlib-ng.git

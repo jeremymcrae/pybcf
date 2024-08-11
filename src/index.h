@@ -27,8 +27,12 @@ class IndexFile {
   std::vector<std::vector<Bin>> indices;
 public:
   IndexFile(std::string path);
-  int reg2bins(size_t contig, std::int64_t beg, std::int64_t end);
-  std::uint64_t query();
+  IndexFile() {};
+  int reg2bin(std::int64_t beg, std::int64_t end);
+  int reg2bins(std::int64_t beg, std::int64_t end);
+  int bin_limit();
+  std::uint64_t query(std::uint32_t contig_id, std::int64_t beg);
+  bool has_index = false;
 };
 
 }

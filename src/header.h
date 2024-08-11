@@ -48,6 +48,7 @@ public:
   std::vector<std::string> get_info();
   std::vector<std::string> get_filters();
   std::vector<std::string> get_formats();
+  std::uint32_t get_contig_id(std::string contig);
 };
 
 }

@@ -12,9 +12,10 @@ import numpy as np
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
-        BCF(string path) except +
+        BCF(string path, string index_path) except +
         BCF() except +
         Variant nextvar() except +
+        void set_region(string chrom, uint32_t start, uint32_t end) except +
         Header header
 
 cdef extern from 'header.h' namespace 'bcf':
@@ -343,12 +344,14 @@ cdef class BcfReader:
     cdef string path
     cdef bool is_open
     cdef BcfHeader _header
-    def __cinit__(self, path):
+    def __cinit__(self, path, index_path=None):
         path = str(path) if isinstance(path, Path) else path
         self.path = path.encode('utf8')
+        if index_path is None:
+            index_path = b''
         
         logging.debug(f'opening BcfReader from {self.path.decode("utf")}')
-        self.thisptr = new BCF(self.path)
+        self.thisptr = new BCF(self.path, index_path)
         self.is_open = True
         self._header = BcfHeader()
         self._header.set_data(&self.thisptr.header)
@@ -384,18 +387,21 @@ cdef class BcfReader:
       '''
       return self.header.samples
     
-    def fetch(self, chrom, start=None, stop=None):
+    def fetch(self, chrom, uint32_t start=0, uint32_t stop=2**31):
         ''' fetches all variants within a genomic region
         
         Args:
             chrom: chromosome that variants must be on
-            start: start nucleotide of region. If None, gets all variants on chromosome
-            stop: end nucleotide of region. If None, gets variants with positions after start
+            start: start nucleotide of region. If None, starts with first variant on chrom
+            stop: end nucleotide of region. If None, continues to last variant on chrom
         
         Yields:
             BcfVars for variants within the genome region
         '''
-        raise NotImplementedError
+        self.thisptr.set_region(chrom.encode('utf8'), start, stop)
+        # TODO: what happens after we've checked variants in a fetch, then want 
+        # TODO: to iterate over variants in the BCF more generally?
+        return iter(self)
     
     def __enter__(self):
         return self

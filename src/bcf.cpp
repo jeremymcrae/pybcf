@@ -8,7 +8,7 @@
 namespace bcf {
 
 
-BCF::BCF(std::string path) {
+BCF::BCF(std::string path, std::string index_path) {
   infile.open(path.c_str());
   if (infile.fail()) {
     throw std::invalid_argument("cannot open file at " + path);
@@ -26,11 +26,48 @@ BCF::BCF(std::string path) {
   std::string text(len, ' ');
   infile.read(reinterpret_cast<char *>(&text[0]), len);
   header = Header(text);
+  
+  // try opening the index file
+  if (index_path.size() == 0) {
+    index_path = path + ".csi";
+  }
+  try {
+    idxfile = IndexFile(index_path);
+  }  catch (const std::invalid_argument& e) {}
+  
 }
 
 Variant BCF::nextvar() {
-  return Variant(infile, header);
+  Variant var = Variant(infile, header);
+  if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
+    throw std::out_of_range("variant not on required chrom");
+  }
+  
+  while (var.pos < query_start) {
+    var = Variant(infile, header);
+    if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
+      throw std::out_of_range("variant not on required chrom");
+    }
+  }
+  if (var.pos > query_end) {
+    throw std::out_of_range("variant out of bounds");
+  }
+  return var;
 }
 
+void BCF::set_region(std::string chrom, std::uint32_t start, std::uint32_t end) {
+  if (!idxfile.has_index) {
+    throw std::invalid_argument("cannot fetch without an index file");
+  }
+  
+  std::uint32_t contig_id = header.get_contig_id(chrom);
+  
+  query_chrom = chrom;
+  query_start = start;
+  query_end = end;
+
+  std::uint64_t offset = idxfile.query(contig_id, start);
+  infile.seekg(offset);
+}
 
 }

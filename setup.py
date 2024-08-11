@@ -63,14 +63,15 @@ def get_gzstream_path():
     cython on windows didn't like the .C extension for gzstream. This just
     renames the file (on windows only), and returns the relative path.
     '''
-    gzstream_path = 'src/gzstream/gzstream.C'
-    if sys.platform == 'win32':
-        gzstream_win_path = 'src/gzstream/gzstream.cpp'
-        try:
-            os.rename(gzstream_path, gzstream_win_path)
-        except FileNotFoundError:
-            pass  # avoid error on github actions
-        gzstream_path = gzstream_win_path
+    # gzstream_path = 'src/gzstream/gzstream.C'
+    gzstream_path = 'src/gzstream.cpp'
+    # if sys.platform == 'win32':
+    #     gzstream_win_path = 'src/gzstream/gzstream.cpp'
+    #     try:
+    #         os.rename(gzstream_path, gzstream_win_path)
+    #     except FileNotFoundError:
+    #         pass  # avoid error on github actions
+    #     gzstream_path = gzstream_win_path
     return gzstream_path
 
 def scrub_gzstream():
@@ -116,6 +117,7 @@ ext = cythonize([
         sources=['src/pybcf/reader.pyx',
             get_gzstream_path(),
             'src/bcf.cpp',
+            'src/index.cpp',
             'src/header.cpp',
             'src/info.cpp',
             'src/sample_data.cpp',

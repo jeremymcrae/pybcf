@@ -181,4 +181,17 @@ std::vector<std::string> Header::get_formats() {
   return vals;
 }
 
+/// @brief find the numeric contig ID for a chromosome/contig name
+/// @param contig chromosome/contig name to find
+/// @return 
+std::uint32_t Header::get_contig_id(std::string contig) {
+  for (auto & x : contigs) {
+    if (x.second.id == contig) {
+      return x.first;
+    }
+  }
+
+  throw std::invalid_argument(contig + " is not in this BCF");
+}
+
 }

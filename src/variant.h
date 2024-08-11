@@ -7,7 +7,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "gzstream/gzstream.h"
+#include "gzstream.h"
 
 #include "header.h"
 #include "types.h"

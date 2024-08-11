@@ -6,7 +6,7 @@
 #include <cstring>
 #include <vector>
 
-#include "gzstream/gzstream.h"
+#include "gzstream.h"
 
 namespace bcf {
 

@@ -387,7 +387,7 @@ cdef class BcfReader:
       '''
       return self.header.samples
     
-    def fetch(self, chrom, uint32_t start=1, uint32_t stop=2**31):
+    def fetch(self, chrom, uint32_t start=1, uint32_t stop=2**29):
         ''' fetches all variants within a genomic region
         
         Args:

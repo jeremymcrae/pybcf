@@ -28,7 +28,8 @@ for var in bcf:
     genotypes = var.samples['GT']  # as n x 2 numpy array, missing=-1
 
 # or fetch from random regions if bcf is indexed
-for bcf.fetch('chr1', 10000, 200000)
+for var in bcf.fetch('chr1', 10000, 200000):
+    print(var.chrom, var.pos)
 ```
 
 ### Limitations

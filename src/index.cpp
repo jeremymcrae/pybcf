@@ -4,9 +4,6 @@
 #include <stdexcept>
 #include <unordered_map>
 
-#include <bitset>
-#include <iostream>
-
 #include "gzstream.h"
 
 #include "index.h"

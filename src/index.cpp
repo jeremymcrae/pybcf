@@ -1,7 +1,10 @@
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
+#include <unordered_map>
 
+#include <bitset>
 #include <iostream>
 
 #include "gzstream.h"
@@ -10,6 +13,12 @@
 
 namespace bcf {
 
+
+Offsets parse_virtual_offset(std::uint64_t v_offset) {
+  std::uint64_t u_offset = v_offset & 0x000000000000ffff;
+  std::uint64_t c_offset = v_offset >> 16;
+  return { u_offset, c_offset};
+}
 
 /// @brief load file according to https://samtools.github.io/hts-specs/CSIv1.pdf
 /// @param path path to CSI index file
@@ -32,30 +41,29 @@ IndexFile::IndexFile(std::string path) {
   infile.read(reinterpret_cast<char *>(&aux[0]), l_aux);
   infile.read(reinterpret_cast<char *>(&n_ref), sizeof(n_ref));
   
-  // std::cout << "min_shift: " << min_shift << ", depth: " << depth << std::endl;
-  
   std::uint32_t n_bins, bin_idx;
-  std::uint64_t loffset, start, end;
+  std::uint64_t v_offset;
   std::int32_t n_chunks;
+  Offsets bin_offsets, chunk_begin, chunk_end;
   for (std::uint32_t i=0; i< n_ref; i++) {
-    std::vector<Bin> bins;
+    std::unordered_map<std::uint32_t, Bin> bins;
     infile.read(reinterpret_cast<char *>(&n_bins), sizeof(n_bins));
-    // if (n_bins > 0) {
-    //   std::cout << "ref #: " << i << std::endl;
-    //   std::cout << " - n_bins: " << n_bins << std::endl;
-    // }
+    
     for (std::uint32_t j=0; j<n_bins; j++) {
       infile.read(reinterpret_cast<char *>(&bin_idx), sizeof(bin_idx));
-      infile.read(reinterpret_cast<char *>(&loffset), sizeof(loffset));
+      infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
       infile.read(reinterpret_cast<char *>(&n_chunks), sizeof(n_chunks));
-      // std::cout << "bin_idx: " << bin_idx << ", virtual offset: " << loffset << ", n_chunks: " << n_chunks << std::endl;
+
+      bin_offsets = parse_virtual_offset(v_offset);
       std::vector<Chunk> chunks;
       for (std::uint32_t k=0; k<n_chunks; k++) {
-        infile.read(reinterpret_cast<char *>(&start), sizeof(start));
-        infile.read(reinterpret_cast<char *>(&end), sizeof(end));
-        chunks.push_back({ start, end });
+        infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
+        chunk_begin = parse_virtual_offset(v_offset);
+        infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
+        chunk_end = parse_virtual_offset(v_offset);
+        chunks.push_back({chunk_begin, chunk_end});
       }
-      bins.push_back({ bin_idx, loffset, chunks });
+      bins[bin_idx] = {bin_offsets, chunks};
     }
     indices.push_back(bins);
   }
@@ -81,23 +89,20 @@ int IndexFile::reg2bin(std::int64_t beg, std::int64_t end) {
 /// @param beg start position of region
 /// @param end end position of region
 /// @return currently integer, but this should be an iterator instead
-int IndexFile::reg2bins(std::int64_t beg, std::int64_t end) {
-  // throw std::invalid_argument("not implemented yet");
+std::vector<std::uint32_t> IndexFile::reg2bins(std::int64_t beg, std::int64_t end) {
   int max_bins = bin_limit();
   
+  std::vector<std::uint32_t> bins;
   int l, t, n, s = min_shift + depth * 3;
   for (--end, l = n = t = 0; l <= depth; s -= 3, t += 1 << l * 3, ++l) {
     int b = t + (beg >> s), e = t + (end >> s), i;
     for (i = b; i <= e; ++i) {
-      std::cout << "n: " << n+1 << ", i: " << i << std::endl;
-      // bins[n++] = i;
-      
       // I should use the vector of bins for a contig (chromosome).
       // Maybe an iterator of bins/chunks for the relevant region?
-      // indices[contig][n++] = i;
+      bins.push_back(i);
     }
   }
-  return n;
+  return bins;
 }
 
 /* calculate maximum bin number -- valid bin numbers range within [0,bin_limit) */
@@ -105,17 +110,35 @@ int IndexFile::bin_limit() {
   return ((1 << (depth + 1) * 3) - 1) / 7;
 }
 
-std::uint64_t IndexFile::query(std::uint32_t contig_id, std::int64_t beg) {
-  return 0;
+Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg) {
+  // find the bins which could overlap a position
+  auto bins = reg2bins(beg, beg);
+  
+  // cull bins which do not exist in the indexfile, and find the bin with the
+  // closest start to the position
+  std::int32_t bin = -1;
+  for (auto & bin_idx: bins) {
+    if (indices[contig_id].count(bin_idx) == 0) {
+      continue;
+    }
+    // just use the highest bin for now, which should be the most precise
+    bin = std::max(bin, (std::int32_t) bin_idx);
+  }
+  
+  if (bin < 0) {
+    throw std::out_of_range("cannot find bin including position: " + std::to_string(beg));
+  }
+  
+  return indices[contig_id][bin].offset;
 }
 
 }
 
 // int main() {
 //   bcf::IndexFile indexfile = bcf::IndexFile("/users/jmcrae/apps/pybcf/chr5.110000001-115000000.bcf.csi");
-//   indexfile.reg2bins(111000000, 112000000);
 //   std::cout << "bin: " << indexfile.reg2bin(111000000, 112000000) << std::endl;
+//   indexfile.query(4, 111000000);
 //   return 0;
 // }
 
-// g++ -stdlib=libc++ -std=c++11 -lz index.cpp gzstream/gzstream.C
+// g++ -stdlib=libc++ -std=c++11 -lz index.cpp gzstream.cpp; ./a.out

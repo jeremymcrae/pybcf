@@ -35,6 +35,8 @@
 #include <fstream>
 #include "zlib.h"
 
+#include "index.h"
+
 #ifdef GZSTREAM_NAMESPACE
 namespace GZSTREAM_NAMESPACE {
 #endif
@@ -63,7 +65,7 @@ public:
     int is_open() { return opened; }
     gzstreambuf* open( const char* name, int open_mode);
     gzstreambuf* close();
-    void seekg(int offset);
+    void seek(bcf::Offsets offset);
     ~gzstreambuf() { close(); }
     
     virtual int     underflow();
@@ -78,6 +80,7 @@ public:
     ~gzstreambase();
     void open( const char* name, int open_mode);
     void close();
+    void seek(bcf::Offsets offset) { buf.seek(offset); };
     gzstreambuf* rdbuf() { return &buf; }
 };
 

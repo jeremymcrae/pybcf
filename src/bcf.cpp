@@ -66,8 +66,8 @@ void BCF::set_region(std::string chrom, std::uint32_t start, std::uint32_t end) 
   query_start = start;
   query_end = end;
 
-  std::uint64_t offset = idxfile.query(contig_id, start);
-  infile.seekg(offset);
+  Offsets offset = idxfile.query(contig_id, start);
+  infile.seek(offset);
 }
 
 }

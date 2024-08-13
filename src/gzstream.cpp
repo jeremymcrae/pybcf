@@ -29,6 +29,7 @@
 #include "gzstream.h"
 #include <iostream>
 #include <string.h>  // for memcpy
+#include <stdexcept>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -64,7 +65,6 @@ gzstreambuf* gzstreambuf::open( const char* name, int open_mode) {
     get_fmode(fmode, mode);
     fd = ::open(name, open_mode);
     file = gzdopen( fd, fmode);
-    // file = gzopen( name, fmode);
     if (file == 0)
         return (gzstreambuf*)0;
     opened = 1;
@@ -81,17 +81,36 @@ gzstreambuf * gzstreambuf::close() {
     return (gzstreambuf*)0;
 }
 
-void gzstreambuf::seekg(int offset) {
-    // if ( is_open())
-    //         clear( rdstate() | std::ios::badbit);
-    ::lseek(fd, offset, SEEK_SET);
-    char fmode[10];
-    get_fmode(fmode, mode);
-    file = gzdopen( fd, fmode);
+void gzstreambuf::seek(bcf::Offsets offset) {
+    // reset the input buffer
     setp( buffer, buffer + (bufferSize-1));
     setg( buffer + 4,  // beginning of putback area
           buffer + 4,  // read position
           buffer + 4); // end position
+    
+    // We must close the previous gzFile, otherwise we leak memory on each seek.
+    // But when we close the gzFile, this also closes the file descriptor, so we
+    // duplicate the file descriptor first.
+    int new_fd = dup(fd);
+    
+    // seek using the file descriptor to an offset in the compressed file
+    ::lseek(new_fd, offset.c_offset, SEEK_SET);
+    
+    // open a new gzfile object using the file descriptor (at new offset)
+    char fmode[10];
+    get_fmode(fmode, mode);
+    file = gzdopen(new_fd, fmode);
+    fd = new_fd;
+    
+    if (file == 0) {
+        throw std::invalid_argument("cannot seek within this gzfile");
+    }
+    
+    // read through to the correct offset in the uncompressed data. The 
+    // uncompressed offset must be less than 2 ** 16, since that is the max
+    // BGZF chunk size (uncompressed or compressed).
+    char tmp[65536];
+    gzread(file, tmp, offset.u_offset);
 }
 
 int gzstreambuf::underflow() { // used for input buffer only

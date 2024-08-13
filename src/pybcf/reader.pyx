@@ -356,7 +356,7 @@ cdef class BcfReader:
         self._header = BcfHeader()
         self._header.set_data(&self.thisptr.header)
     
-    def __dealloc__(self):
+    def __close(self):
         if self.is_open:
           del self.thisptr
         self.is_open = False
@@ -387,7 +387,7 @@ cdef class BcfReader:
       '''
       return self.header.samples
     
-    def fetch(self, chrom, uint32_t start=0, uint32_t stop=2**31):
+    def fetch(self, chrom, uint32_t start=1, uint32_t stop=2**31):
         ''' fetches all variants within a genomic region
         
         Args:
@@ -398,14 +398,19 @@ cdef class BcfReader:
         Yields:
             BcfVars for variants within the genome region
         '''
-        self.thisptr.set_region(chrom.encode('utf8'), start, stop)
-        # TODO: what happens after we've checked variants in a fetch, then want 
-        # TODO: to iterate over variants in the BCF more generally?
+        if not self.is_open:
+            raise ValueError('bcf is closed')
+        
+        try:
+            self.thisptr.set_region(chrom.encode('utf8'), start, stop)
+        except IndexError:
+            pass
+        
         return iter(self)
     
     def __enter__(self):
         return self
     
     def __exit__(self, exc_type, exc_value, traceback):
-        self.__dealloc__()
+        self.__close()
         return False

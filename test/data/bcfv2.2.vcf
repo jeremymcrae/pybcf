@@ -11,8 +11,12 @@
 ##FORMAT=<ID=LPL,Number=.,Type=Integer,Description="Local normalized, Phred-scaled likelihoods">
 ##FORMAT=<ID=F1,Number=.,Type=String,Description="variable number string">
 ##FORMAT=<ID=F2,Number=1,Type=String,Description="fixed number string">
-##contig=<ID=chr1,length=5>
+##contig=<ID=chr1,length=50000000>
+##contig=<ID=chr2,length=5>
+##contig=<ID=chr3,length=5>
 #CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	sample_1	sample_2	sample_3
 chr1	1	.	G	A	10	PASS	AC=1;AN=6;key1=text;key2=a	GT:GQ:AD:LPL:F1:F2	0/0:50:50:0:.	0/1:50:30,20:80,0,50:1	0/0:80:30:0:long_string_value:a
 chr1	2	.	G	A	10	PASS	AC=0;AN=6;key1;key2=	GT:GQ:AD:LPL:F1:F2	0/0:50:50:0:.	0/0:80:30:0:.	0/0:80:30:0:two,strings:abb
 chr1	3	.	G	A,C	10	PASS	AC=1,0;AN=6;key1=longerstringvalue;key2=å%	GT:GQ:AD:LPL:F1:F2	0/0:50:50:0:.	0/0:80:30:0:.	0/1:50:20,20,0:80,0,50:1:ccc,ddd
+chr1	50000000	.	G	C	10	PASS	AC=1,0;AN=6;key1=b;key2	GT:GQ:AD:LPL:F1:F2	0/0:50:50:0:.	0/0:80:30:0:.	0/1:50:20,20,0:80,0,50:1:ccc,ddd
+chr2	1	.	G	GT	10	PASS	AC=1,0;AN=6;key1=a;key2	GT:GQ:AD:LPL:F1:F2	0/0:50:50:0:.	0/0:80:30:0:.	0/1:50:20,20,0:80,0,50:1:ccc,ddd

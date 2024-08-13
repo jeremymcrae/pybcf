@@ -80,7 +80,10 @@ public:
     ~gzstreambase();
     void open( const char* name, int open_mode);
     void close();
-    void seek(bcf::Offsets offset) { buf.seek(offset); };
+    void seek(bcf::Offsets offset) { 
+        clear();
+        buf.seek(offset); 
+    };
     gzstreambuf* rdbuf() { return &buf; }
 };
 

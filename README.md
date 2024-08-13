@@ -26,8 +26,10 @@ for var in bcf:
     # sample data is accessed as numpy arrays via the format keys
     keys = list(var.samples)
     genotypes = var.samples['GT']  # as n x 2 numpy array, missing=-1
+
+# or fetch from random regions if bcf is indexed
+for bcf.fetch('chr1', 10000, 200000)
 ```
 
 ### Limitations
- - can't fetch variants from random regions yet
  - extracting info fields is a little slow

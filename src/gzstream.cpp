@@ -133,14 +133,17 @@ gzstreambase::~gzstreambase() {
 }
 
 void gzstreambase::open( const char* name, int open_mode) {
-    if ( ! buf.open( name, open_mode))
+    if ( ! buf.open( name, open_mode)) {
         clear( rdstate() | std::ios::badbit);
+    }
 }
 
 void gzstreambase::close() {
-    if ( buf.is_open())
-        if ( ! buf.close())
+    if ( buf.is_open()) {
+        if ( ! buf.close()) {
             clear( rdstate() | std::ios::badbit);
+        }
+    }
 }
 
 #ifdef GZSTREAM_NAMESPACE

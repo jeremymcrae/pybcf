@@ -8,6 +8,8 @@
 
 namespace bcf {
 
+/// stores the file offset for a bzgf chunk containing the start of a bin, and
+/// also the offset where the bin begins within the uncompressed chunk
 struct Offsets {
   std::uint64_t u_offset; // uncompressed offset (within bgzf chunk)
   std::uint64_t c_offset; // compressed offset (within overall file)
@@ -36,7 +38,9 @@ public:
   int reg2bin(std::int64_t beg, std::int64_t end);
   std::vector<std::uint32_t> reg2bins(std::int64_t beg, std::int64_t end);
   int bin_limit();
-  Offsets query(std::uint32_t contig_id, std::int64_t beg);
+  std::uint32_t get_bin_depth(std::uint32_t bin_idx);
+  std::uint32_t get_bin_offset(std::uint32_t bin_idx);
+  Offsets query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end);
   bool has_index = false;
 };
 

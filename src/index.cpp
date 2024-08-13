@@ -107,26 +107,109 @@ int IndexFile::bin_limit() {
   return ((1 << (depth + 1) * 3) - 1) / 7;
 }
 
-Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg) {
+/// @brief find the depth for a bin
+///
+/// We need to know the depth of a bin in order to figure out how wide the bin
+/// is, and its start and end. The width can be found via get_width().
+///
+/// @param bin_idx bin index
+/// @return depth of the bin
+std::uint32_t IndexFile::get_bin_depth(std::uint32_t bin_idx) {
+  std::uint32_t factor = 8;
+  std::uint32_t start = 0;
+  std::uint32_t end = 0;
+
+  std::uint32_t bin_depth = depth;
+  while (bin_depth >= 0) {
+    if ((bin_idx >= start) && (bin_idx <= end)) {
+      return bin_depth;
+    }
+    bin_depth -= 1;
+    start = end + 1;
+    end = start * factor;
+  }
+  
+  throw std::invalid_argument("couldn't get depth for bin: " + std::to_string(bin_idx));
+}
+
+/// @brief find the offset of a the bin relative to the first at the same depth
+/// @param bin_idx bin index
+/// @return 
+std::uint32_t IndexFile::get_bin_offset(std::uint32_t bin_idx) {
+  std::uint32_t factor = 8;
+  std::uint32_t start = 0;
+  std::uint32_t end = 0;
+
+  std::uint32_t bin_depth = depth;
+  while (bin_depth >= 0) {
+    if ((bin_idx >= start) && (bin_idx <= end)) {
+      return bin_idx - start;
+    }
+    bin_depth -= 1;
+    start = end + 1;
+    end = start * factor;
+  }
+  
+  throw std::invalid_argument("couldn't get offset for bin: " + std::to_string(bin_idx));
+}
+
+/// @brief find the actual width of a bin
+/// @param depth index depth for a bin
+/// @param min_shift minimum bit shift (typically 14)
+std::uint32_t get_width(std::int32_t depth, std::int32_t min_shift) {
+  return 1 << (min_shift + (depth * 3));
+}
+
+/// @brief find the file offsets for the first bin to overlap a given chrom region
+/// @param contig_id integer for indexing into the indices vector
+/// @param beg start position of region
+/// @param end end position of region
+/// @return file offsets for the bin as struct with u_offset and c_offset members.
+Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end) {
   // find the bins which could overlap a position
-  auto bins = reg2bins(beg, beg);
+  auto bins = reg2bins(beg, end);
   
   // cull bins which do not exist in the indexfile, and find the bin with the
-  // closest start to the position
-  std::int32_t bin = -1;
+  // closest start to the position, preferrably immediately upstream of the begin
+  // position, but allow using the first downstream, if upstream bins do not exist
+  std::uint32_t bin_depth, bin_width, bin_start, delta;
+  std::uint32_t left_delta = 1 << (min_shift + 3 * depth);
+  std::uint32_t right_delta = 1 << (min_shift + 3 * depth);
+  std::int32_t left_bin = -1;
+  std::int32_t right_bin = -1;
   for (auto & bin_idx: bins) {
     if (indices[contig_id].count(bin_idx) == 0) {
       continue;
     }
-    // just use the highest bin for now, which should be the most precise
-    bin = std::max(bin, (std::int32_t) bin_idx);
+    
+    bin_depth = get_bin_depth(bin_idx);
+    bin_width = get_width(bin_depth, min_shift);
+    bin_start = get_bin_offset(bin_idx) * bin_width;
+    delta = std::abs(bin_start - beg);
+    
+    // find the bin that starts closest to the begin position
+    if (bin_start < beg) {
+      if (delta < left_delta) {
+        left_bin = bin_idx;
+        left_delta = delta;
+      };
+    } else {
+      if (delta < right_delta) {
+        right_bin = bin_idx;
+        right_delta = delta;
+      };
+    }
   }
   
-  if (bin < 0) {
-    throw std::out_of_range("cannot find bin including position: " + std::to_string(beg));
+  if ((left_bin < 0) && (right_bin < 0)) {
+    throw std::out_of_range("cannot find bin for: " + std::to_string(beg) + "-" + std::to_string(end));
   }
   
-  return indices[contig_id][bin].offset;
+  if (left_bin >= 0) {
+    return indices[contig_id][left_bin].offset;
+  } else {
+    return indices[contig_id][right_bin].offset;
+  }
 }
 
 }

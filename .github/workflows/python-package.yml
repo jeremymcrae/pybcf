@@ -33,7 +33,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: ./wheelhouse/*.whl
-          name: artifact-${{ matrix.runs-on }}
+          name: artifact-${{ matrix.os }}-${{ matrix.python }}
 
   build_sdist:
     name: Build source distribution
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           path: dist/*.tar.gz
-          name: artifact-${{ matrix.runs-on }}
+          name: artifact-${{ matrix.os }}-${{ matrix.python }}
 
   upload_pypi:
     needs: [build_wheels, build_sdist]

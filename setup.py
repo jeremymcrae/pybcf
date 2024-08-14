@@ -1,5 +1,4 @@
 
-import glob
 import io
 from pathlib import Path
 from setuptools import setup
@@ -9,7 +8,6 @@ import os
 import platform
 
 from distutils.core import Extension
-from distutils.ccompiler import new_compiler
 from Cython.Build import cythonize
 
 EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include']

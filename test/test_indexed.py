@@ -38,7 +38,7 @@ class TestIndexed(unittest.TestCase):
         self.assertEqual(pybcf_fetched, pysam_fetched)
     
     def test_fetch_after_bcf_iterated(self):
-        ''' check this we can fetch variants
+        ''' check that we can fetch variants after we reach the end of the bcf
         '''
         bcf = BcfReader(self.hapmap)
         chrom = next(bcf).chrom

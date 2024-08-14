@@ -25,7 +25,7 @@ for var in bcf:
     
     # sample data is accessed as numpy arrays via the format keys
     keys = list(var.samples)
-    genotypes = var.samples['GT']  # as n x 2 numpy array, missing=-1
+    genotypes = var.samples['GT']  # as n x 2 numpy array, missing=nan
 
 # or fetch from random regions if bcf is indexed
 for var in bcf.fetch('chr1', 10000, 200000):

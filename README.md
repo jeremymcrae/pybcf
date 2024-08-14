@@ -33,4 +33,5 @@ for var in bcf.fetch('chr1', 10000, 200000):
 ```
 
 ### Limitations
+ - doesn't work with uncompressed BCFs
  - extracting info fields is a little slow

@@ -62,12 +62,12 @@ void BCF::set_region(std::string chrom, std::uint32_t start, std::uint32_t end) 
   
   std::uint32_t contig_id = header.get_contig_id(chrom);
   
+  Offsets offset = idxfile.query(contig_id, start, end);
+  infile.seek(offset);
+  
   query_chrom = chrom;
   query_start = start;
   query_end = end;
-  
-  Offsets offset = idxfile.query(contig_id, start, end);
-  infile.seek(offset);
 }
 
 }

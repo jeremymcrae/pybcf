@@ -346,9 +346,12 @@ cdef class BcfReader:
     cdef BcfHeader _header
     def __cinit__(self, path, index_path=None):
         path = str(path) if isinstance(path, Path) else path
+        index_path = str(index_path) if isinstance(index_path, Path) else index_path
         self.path = path.encode('utf8')
         if index_path is None:
             index_path = b''
+        else:
+            index_path = index_path.encode('utf8')
         
         logging.debug(f'opening BcfReader from {self.path.decode("utf")}')
         self.thisptr = new BCF(self.path, index_path)

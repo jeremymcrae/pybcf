@@ -7,8 +7,8 @@ data into numpy arrays quickly.
 
 This performs relatively better at larger sample sizes e.g. it's 7X faster than
 pysam with 2k samples, but improves to 50X faster than pysam with 30k samples. 
-Currently it's slower than pysam for BCFs without samples, but on the other hand,
-BCFs without variants aren't generally the limiting factor e.g. it still parses 
+Currently it's slower than pysam for BCFs without sample level data, but BCFs
+without genotypes aren't generally a limiting factor e.g. it still parses 
 300k variants/second under those conditions.
 
 ```py

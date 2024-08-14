@@ -27,9 +27,6 @@ if sys.platform == "darwin":
 if platform.machine() == 'x86_64':
     EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']
 
-def flatten(*lists):
-    return [str(x) for sublist in lists for x in sublist]
-
 def build_zlib():
     ''' compile zlib code to object files for linking
     

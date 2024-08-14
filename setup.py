@@ -57,65 +57,14 @@ def build_zlib():
     
     return str(build_dir), objs
 
-def get_gzstream_path():
-    ''' workaround for building gzstream on windows
-
-    cython on windows didn't like the .C extension for gzstream. This just
-    renames the file (on windows only), and returns the relative path.
-    '''
-    # gzstream_path = 'src/gzstream/gzstream.C'
-    gzstream_path = 'src/gzstream.cpp'
-    # if sys.platform == 'win32':
-    #     gzstream_win_path = 'src/gzstream/gzstream.cpp'
-    #     try:
-    #         os.rename(gzstream_path, gzstream_win_path)
-    #     except FileNotFoundError:
-    #         pass  # avoid error on github actions
-    #     gzstream_path = gzstream_win_path
-    return gzstream_path
-
-def scrub_gzstream():
-    ''' workaround for compilation error on macos
-    
-    compiling gzstream requires the corresponding gzstream.h file, but if we 
-    include the gzstream directory in the include dirs, then clang complains
-    about the version file in the gzstream folder. If we remove the gzstream
-    directory from the include dirs, then clang complains about the missing
-    gzstream.h. This is because gzstream.C identifies it's header file with
-    angle brackets. Replacing the angle brackets in that line seems to work.
-    
-    We also need to do the same for the "#include <zlib.h>" in the gzstream 
-    header, since this now uses zlib-ng for better performance.
-    '''
-    with open(get_gzstream_path(), 'rt') as handle:
-        lines = handle.readlines()
-    
-    with open(get_gzstream_path(), 'wt') as handle:
-        for line in lines:
-            if line == '#include <gzstream.h>\n':
-                line = '#include "gzstream.h"\n'
-            handle.write(line)
-    
-    # rejig the header file
-    gzstream_header_path = get_gzstream_path().rsplit('.')[0] + '.h'
-    with open(gzstream_header_path, 'rt') as handle:
-        lines = handle.readlines()
-    
-    with open(gzstream_header_path, 'wt') as handle:
-        for line in lines:
-            if line == '#include <zlib.h>\n':
-                line = '#include "zlib.h"\n'
-            handle.write(line)
-
 include_dir, zlib  = build_zlib()
-scrub_gzstream()
 
 ext = cythonize([
     Extension('pybcf.reader',
         extra_compile_args=EXTRA_COMPILE_ARGS,
         extra_link_args=EXTRA_LINK_ARGS,
         sources=['src/pybcf/reader.pyx',
-            get_gzstream_path(),
+            'src/gzstream.cpp',
             'src/bcf.cpp',
             'src/index.cpp',
             'src/header.cpp',

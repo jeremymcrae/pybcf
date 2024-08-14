@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from pybcf import BcfReader
+from pysam import VariantFile
 
 class TestIndexed(unittest.TestCase):
     ''' class to make sure BcfReader works correctly
@@ -16,7 +17,40 @@ class TestIndexed(unittest.TestCase):
         '''
         bcf = BcfReader(self.hapmap)
         self.assertTrue(hasattr(bcf, 'fetch') and callable(getattr(bcf, 'fetch')))
+    
+    def test_matches_pysam(self):
+        ''' check this fetch gets the same variants as pysam fetch
+        '''
+        bcf = BcfReader(self.hapmap)
+        vcf = VariantFile(self.hapmap)
         
+        sites = [(x.chrom, x.pos) for x in bcf]
+        chroms = set(x[0] for x in sites)
+        self.assertTrue(len(chroms) == 1)
+        chrom = next(iter(chroms))
+        
+        _, pos_50th = sites[len(sites) // 2]
+        _, pos_75th = sites[(len(sites) // 4) * 3]
+        
+        # check that we get variants restricted to a region after fetching
+        pybcf_fetched = [(x.chrom, x.pos) for x in bcf.fetch(chrom, pos_50th, pos_75th)]
+        pysam_fetched = [(x.chrom, x.pos) for x in vcf.fetch(chrom, pos_50th-1, pos_75th)]
+        self.assertEqual(pybcf_fetched, pysam_fetched)
+    
+    def test_fetch_after_bcf_iterated(self):
+        ''' check this we can fetch variants
+        '''
+        bcf = BcfReader(self.hapmap)
+        chrom = next(bcf).chrom
+        for x in bcf:
+            pass
+        
+        # if we try to iterate now, there are no more variants
+        self.assertEqual(list(bcf), [])
+        
+        # but we can still fetch variants even after hitting the end of the bcf
+        self.assertTrue(len(list(bcf.fetch(chrom))) > 0)
+    
     def test_fetch_one_chrom(self):
         ''' check that if we fetch one chrom, none of the other chroms are included
         '''
@@ -100,6 +134,15 @@ class TestIndexed(unittest.TestCase):
         self.assertTrue(missing_chrom not in chroms)
         with self.assertRaises(ValueError):
             bcf.fetch(missing_chrom)
+    
+    def test_raise_error_for_swapped_coordinates(self):
+        ''' check we raise error if the start position is after the end
+        '''
+        bcf = BcfReader(self.test_cases)
+        chrom = next(bcf).chrom
+        
+        with self.assertRaises(ValueError):
+            bcf.fetch(chrom, 10, 9)
     
     def test_fetch_chrom_without_variants(self):
         ''' check we don't raise an error if fetching for a chrom that exist

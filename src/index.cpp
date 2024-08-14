@@ -166,6 +166,10 @@ std::uint32_t get_width(std::int32_t depth, std::int32_t min_shift) {
 /// @param end end position of region
 /// @return file offsets for the bin as struct with u_offset and c_offset members.
 Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end) {
+  if (end < beg) {
+    throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
+  }
+  
   // find the bins which could overlap a position
   auto bins = reg2bins(beg, end);
   

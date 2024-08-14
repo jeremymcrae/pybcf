@@ -143,6 +143,10 @@ class TestIndexed(unittest.TestCase):
         
         with self.assertRaises(ValueError):
             bcf.fetch(chrom, 10, 9)
+        
+        # but we can still iterate, since the fetch didn't succeed
+        iterated = list(bcf)
+        self.assertTrue(len(iterated) > 0)
     
     def test_fetch_chrom_without_variants(self):
         ''' check we don't raise an error if fetching for a chrom that exist

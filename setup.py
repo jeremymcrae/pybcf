@@ -17,6 +17,8 @@ if sys.platform == "darwin":
         "-stdlib=libc++",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
+        '-mavx',
+        '-mavx2',
         ]
     EXTRA_LINK_ARGS += [
         "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",

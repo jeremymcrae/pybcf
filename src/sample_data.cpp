@@ -197,7 +197,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   }
 #endif
   
-  std::uint32_t missing_indicator = 1 << ((8 * type.type_size) - 1);
+  std::int32_t missing_indicator = 1 << ((8 * type.type_size) - 1);
   offset += n;
   std::uint32_t idx=n;
   n = n / type.n_vals;

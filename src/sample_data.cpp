@@ -222,14 +222,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 std::vector<float> SampleData::get_floats(FormatType & type) {
   std::vector<float> vals;
   vals.resize(type.n_vals * n_samples);
-  std::uint32_t offset = type.offset;
-  std::uint32_t idx=0;
-  for (std::uint32_t n=0; n < n_samples; n++) {
-    for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = parse_float(&buf[0], offset);
-      idx++;
-    }
-  }
+  std::memcpy(&vals[0], &buf[type.offset], type.n_vals * n_samples * 4);
   return vals;
 }
 
@@ -237,7 +230,6 @@ std::vector<std::string> SampleData::get_strings(FormatType & type) {
   std::vector<std::string> vals;
   vals.resize(n_samples);
   std::uint32_t offset = type.offset;
-  std::uint32_t idx=0;
   for (std::uint32_t n=0; n < n_samples; n++) {
     vals[n] = parse_string(&buf[0], offset, type.n_vals);
   }

@@ -99,10 +99,10 @@ __m128i missing_8bit_to_32bit(__m128i data) {
   return (__m128i) _mm_or_ps((__m128) data, _mm_and_ps((__m128) missing_32bit, (__m128) mask));
 }
 #elif defined(__aarch64__)
-int32x4_t missing_8bit_to_32bit(_int32x4_t data) {
-  int32x4_t data, mask;
-  const int32x4_t missing_8bit = vdup_n_s32(0x80);
-  const int32x4_t missing_32bit = vdup_n_s32(0x80000000);
+int32x4_t missing_8bit_to_32bit(int32x4_t data) {
+  int32x4_t mask;
+  const int32x4_t missing_8bit = vdupq_n_s32(0x80);
+  const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
   // find which entries have missing values
   mask = vceqq_s32(data, missing_8bit);
@@ -132,10 +132,10 @@ int32x4_t missing_8bit_to_32bit(_int32x4_t data) {
   return (__m128i) _mm_or_ps((__m128) data, _mm_and_ps((__m128) missing_32bit, (__m128) mask));
 }
 #elif defined(__aarch64__)
-int32x4_t missing_16bit_to_32bit(_int32x4_t data) {
-  int32x4_t data, mask;
-  const int32x4_t missing_16bit = vdup_n_s32(0x8000);
-  const int32x4_t missing_32bit = vdup_n_s32(0x80000000);
+int32x4_t missing_16bit_to_32bit(int32x4_t data) {
+  int32x4_t mask;
+  const int32x4_t missing_16bit = vdupq_n_s32(0x8000);
+  const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
   // find which entries have missing values
   mask = vceqq_s32(data, missing_16bit);
@@ -262,7 +262,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
   
   for (; n < (max_n - (max_n % 8)); n += 8) {
     // load data from the array into SIMD registers.
-    data = vld1q_s16((std::int8_t *)&buf[offset + n]);
+    data = vld1q_s16((std::int16_t *)&buf[offset + n]);
 
     // replace the missing indicator values with standard missing values
     mask = vceqq_s16(data, not_recorded);            // find and set missing values
@@ -310,7 +310,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
     }
   }
 #elif defined(__aarch64__)
-  int32x4_t data;
+  int32x4_t data, mask;
   int32x4_t missing = vdupq_n_s32(0x8000000);
   int32x4_t not_recorded = vdupq_n_s32(0x81);
   

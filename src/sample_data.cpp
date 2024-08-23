@@ -86,7 +86,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
 #if defined(__x86_64__)
 __m128i missing_8bit_to_32bit(__m128i data) {
   __m128 mask;
-  const __m128i missing_8bit = _mm_set_epi32(0x00000080, 0x00000080, 0x00000080, 0x00000080);
+  const __m128i missing_8bit = _mm_set_epi32(0xffffff80, 0xffffff80, 0xffffff80, 0xffffff80);
   const __m128i missing_32bit = _mm_set_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000);
   
   // find which entries have missing values
@@ -101,7 +101,7 @@ __m128i missing_8bit_to_32bit(__m128i data) {
 #elif defined(__aarch64__)
 int32x4_t missing_8bit_to_32bit(int32x4_t data) {
   int32x4_t mask;
-  const int32x4_t missing_8bit = vdupq_n_s32(0x80);
+  const int32x4_t missing_8bit = vdupq_n_s32(0xffffff80);
   const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
   // find which entries have missing values
@@ -119,7 +119,7 @@ int32x4_t missing_8bit_to_32bit(int32x4_t data) {
 #if defined(__x86_64__)
   __m128i missing_16bit_to_32bit(__m128i data) {
   __m128 mask;
-  const __m128i missing_16bit = _mm_set_epi32(0x00008000, 0x00008000, 0x00008000, 0x00008000);
+  const __m128i missing_16bit = _mm_set_epi32(0xffff8000, 0xffff8000, 0xffff8000, 0xffff8000);
   const __m128i missing_32bit = _mm_set_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000);
   
   // find which entries have missing values
@@ -134,7 +134,7 @@ int32x4_t missing_8bit_to_32bit(int32x4_t data) {
 #elif defined(__aarch64__)
 int32x4_t missing_16bit_to_32bit(int32x4_t data) {
   int32x4_t mask;
-  const int32x4_t missing_16bit = vdupq_n_s32(0x8000);
+  const int32x4_t missing_16bit = vdupq_n_s32(0xffff8000);
   const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
   // find which entries have missing values
@@ -177,14 +177,14 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
       // widen 8-bit ints to 16 then 32bit, standardize missing value, and store
       low = _mm256_extractf128_si256(data, 0);
       hi = _mm256_extractf128_si256(data, 1);
-      _mm_storeu_ps((float *) &vals[n], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(low)));
-      _mm_storeu_ps((float *) &vals[n + 4], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(low, 4))));
-      _mm_storeu_ps((float *) &vals[n + 8], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(low, 8))));
-      _mm_storeu_ps((float *) &vals[n + 12], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(low, 12))));
-      _mm_storeu_ps((float *) &vals[n + 16], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(hi)));
-      _mm_storeu_ps((float *) &vals[n + 20], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(hi, 4))));
-      _mm_storeu_ps((float *) &vals[n + 24], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(hi, 8))));
-      _mm_storeu_ps((float *) &vals[n + 28], (__m128) missing_8bit_to_32bit(_mm_cvtepu8_epi32(_mm_bsrli_si128(hi, 12))));
+      _mm_storeu_ps((float *) &vals[n], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(low)));
+      _mm_storeu_ps((float *) &vals[n + 4], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4))));
+      _mm_storeu_ps((float *) &vals[n + 8], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8))));
+      _mm_storeu_ps((float *) &vals[n + 12], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12))));
+      _mm_storeu_ps((float *) &vals[n + 16], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(hi)));
+      _mm_storeu_ps((float *) &vals[n + 20], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4))));
+      _mm_storeu_ps((float *) &vals[n + 24], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8))));
+      _mm_storeu_ps((float *) &vals[n + 28], (__m128) missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12))));
     }
   }
 #elif defined(__aarch64__)
@@ -204,12 +204,12 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
 
     // store genotypes as 32-bit ints, have to expand all values in turn
     wider = vmovl_s8(vget_low_s8(data));
-    vst1q_s32(&vals[n], missing_8bit_to_32bit(vmovl_u16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 4], missing_8bit_to_32bit(vmovl_u16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
+    vst1q_s32(&vals[n + 4], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
 
     wider = vmovl_s8(vget_high_s8(data));
-    vst1q_s32(&vals[n + 8], missing_8bit_to_32bit(vmovl_u16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 12], missing_8bit_to_32bit(vmovl_u16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n + 8], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
+    vst1q_s32(&vals[n + 12], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
   }
 #endif
   offset += n;
@@ -248,10 +248,10 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
       // widen 8-bit ints to 16 then 32bit, standardize missing value, and store
       low = _mm256_extractf128_si256(data, 0);
       hi = _mm256_extractf128_si256(data, 1);
-      _mm_storeu_ps((float *) &vals[n], (__m128) missing_16bit_to_32bit(_mm_cvtepu16_epi32(low)));
-      _mm_storeu_ps((float *) &vals[n + 4], (__m128) missing_16bit_to_32bit(_mm_cvtepu16_epi32(_mm_bsrli_si128(low, 8))));
-      _mm_storeu_ps((float *) &vals[n + 8], (__m128) missing_16bit_to_32bit(_mm_cvtepu16_epi32(hi)));
-      _mm_storeu_ps((float *) &vals[n + 12], (__m128) missing_16bit_to_32bit(_mm_cvtepu16_epi32(_mm_bsrli_si128(hi, 8))));
+      _mm_storeu_ps((float *) &vals[n], (__m128) missing_16bit_to_32bit(_mm_cvtepi16_epi32(low)));
+      _mm_storeu_ps((float *) &vals[n + 4], (__m128) missing_16bit_to_32bit(_mm_cvtepi16_epi32(_mm_bsrli_si128(low, 8))));
+      _mm_storeu_ps((float *) &vals[n + 8], (__m128) missing_16bit_to_32bit(_mm_cvtepi16_epi32(hi)));
+      _mm_storeu_ps((float *) &vals[n + 12], (__m128) missing_16bit_to_32bit(_mm_cvtepi16_epi32(_mm_bsrli_si128(hi, 8))));
     }
   }
 #elif defined(__aarch64__)
@@ -269,8 +269,8 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
     data = vorrq_s16(data, vandq_s16(missing, mask)); // swap in new missing values
 
     // store genotypes as 32-bit ints, have to expand all values in turn
-    vst1q_s32(&vals[n], missing_16bit_to_32bit(vmovl_u16(vget_low_s16(data))));
-    vst1q_s32(&vals[n + 4], missing_16bit_to_32bit(vmovl_u16(vget_high_s16(data))));
+    vst1q_s32(&vals[n], missing_16bit_to_32bit(vmovl_s16(vget_low_s16(data))));
+    vst1q_s32(&vals[n + 4], missing_16bit_to_32bit(vmovl_s16(vget_high_s16(data))));
   }
 #endif
   offset += n;

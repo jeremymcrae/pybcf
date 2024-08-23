@@ -51,8 +51,8 @@ class TestBcfReader(unittest.TestCase):
     ''' class to make sure BcfReader works correctly
     '''
     
-    def test_without_genotypes(self):
-        ''' check this package matches pysam for info fields for BCF without genotypes
+    def test_without_sample_data(self):
+        ''' check this package matches pysam for BCF without sample data
         '''
         path = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
         vcf_pysam = VariantFile(path)
@@ -72,8 +72,8 @@ class TestBcfReader(unittest.TestCase):
             for field in var_pysam.info:
                 self.assertEqual(var_pysam.info[field], var_pybcf.info[field],)
     
-    def test_with_genotypes(self):
-        ''' check this package matches pysam for info fields for BCF
+    def test_with_sample_data(self):
+        ''' check this package matches pysam for BCF with per sample data
         '''
         path = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
         vcf_pysam = VariantFile(path)
@@ -101,6 +101,58 @@ class TestBcfReader(unittest.TestCase):
                 
                 self.assertTrue((is_nan_pysam == is_nan_pybcf).all())
                 self.assertTrue((geno_pybcf[~is_nan_pysam] == geno_pysam[~is_nan_pysam]).all())
+            
+            self.assertEqual(set(var_pysam.format), set(var_pybcf.samples))
+            for key in var_pybcf.samples:
+                if key == 'GT':
+                    continue
+                data_pybcf = var_pybcf.samples[key]
+                data_pysam = [x[key] for x in var_pysam.samples.itervalues()]
+                
+                if isinstance(data_pybcf, list):
+                    for x, y in zip(data_pysam, data_pybcf):
+                        if isinstance(x, str) and isinstance(y, tuple):
+                            assert len(y) == 1
+                            y = y[0]
+                        self.assertEqual(x, y)
+                
+                # pysam and pybcf represent the data differently. pysam returns
+                # a ragged list, whereas pybcf inserts nan values in the gaps
+                elif len(data_pybcf.shape) > 1:
+                    sums_pybcf = (~np.isnan(data_pybcf)).sum(axis=1)
+                    sums_pysam = np.array([len(x) for x in data_pysam])
+                    
+                    # finding values to skip 
+                    skip = sums_pybcf == 0
+                    if skip.sum() > 0:
+                        # the places where sums_bcf is zero correspond to pysam
+                        # gave a (None, ) tuple
+                        self.assertTrue((sums_pysam[skip] == 1).all())
+                        self.assertTrue([x for x, keep in zip(data_pysam, skip) if keep] == [(None, )] * skip.sum())
+                        
+                        sums_pybcf = sums_pybcf[~skip]
+                        sums_pysam = sums_pysam[~skip]
+                        
+                        data_pybcf = data_pybcf[~skip]
+                        data_pysam = [x for x, drop in zip(data_pysam, skip) if not drop]
+                    
+                    self.assertTrue((sums_pybcf == sums_pysam).all())
+                    data_pybcf = [tuple(x[~np.isnan(x)].tolist()) for x in data_pybcf]
+                    self.assertEqual(data_pybcf, data_pysam)
+                else:
+                    data_pysam = np.array(data_pysam)
+                    if len(data_pysam.shape) > 1 and max(len(x) for x in data_pysam):
+                        data_pysam = data_pysam.T
+                    
+                    not_nan = ~np.isnan(data_pybcf)
+                    data_pybcf = data_pybcf[not_nan]
+                    data_pysam = data_pysam[not_nan]
+                    
+                    for i, (x, y) in enumerate(zip(data_pybcf, data_pysam)):
+                        if x != y:
+                            print(i, x, y)
+                    
+                    self.assertTrue((data_pybcf == data_pysam).all())
     
     def test_header_access(self):
         ''' check this package matches pysam for the header fields

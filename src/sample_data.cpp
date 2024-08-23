@@ -111,7 +111,7 @@ int32x4_t missing_8bit_to_32bit(int32x4_t data) {
   data = vandq_s32(data, vmvnq_s32(mask));
   
   // replace 8-bit missing value with 32-bit missing value
-  return vorq_s32(data, vandq_s32(missing_32bit, mask));
+  return vorrq_s32(data, vandq_s32(missing_32bit, mask));
 }
 #endif
 
@@ -144,7 +144,7 @@ int32x4_t missing_16bit_to_32bit(int32x4_t data) {
   data = vandq_s32(data, vmvnq_s32(mask));
   
   // replace 16-bit missing value with 32-bit missing value
-  return vorq_s32(data, vandq_s32(missing_32bit, mask));
+  return vorrq_s32(data, vandq_s32(missing_32bit, mask));
 }
 #endif
 
@@ -256,7 +256,6 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
   }
 #elif defined(__aarch64__)
   int16x8_t data, mask;
-  int16x8_t wider;
   int16x8_t missing = vdupq_n_s16(0x8000);
   int16x8_t not_recorded = vdupq_n_s16(0x8001);
   

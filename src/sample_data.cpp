@@ -204,12 +204,12 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
 
     // store genotypes as 32-bit ints, have to expand all values in turn
     wider = vmovl_s8(vget_low_s8(data));
-    vst1q_s32(&vals[n], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 4], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n], missing_8bit_to_32bit(vmovl_u16(vget_low_s16(wider))));
+    vst1q_s32(&vals[n + 4], missing_8bit_to_32bit(vmovl_u16(vget_high_s16(wider))));
 
     wider = vmovl_s8(vget_high_s8(data));
-    vst1q_s32(&vals[n + 8], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 12], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n + 8], missing_8bit_to_32bit(vmovl_u16(vget_low_s16(wider))));
+    vst1q_s32(&vals[n + 12], missing_8bit_to_32bit(vmovl_u16(vget_high_s16(wider))));
   }
 #endif
   offset += n;
@@ -269,8 +269,8 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
     data = vorrq_s16(data, vandq_s16(missing, mask)); // swap in new missing values
 
     // store genotypes as 32-bit ints, have to expand all values in turn
-    vst1q_s32(&vals[n], missing_16bit_to_32bit(vmovl_s16(vget_low_s16(data))));
-    vst1q_s32(&vals[n + 4], missing_16bit_to_32bit(vmovl_s16(vget_high_s16(data))));
+    vst1q_s32(&vals[n], missing_16bit_to_32bit(vmovl_u16(vget_low_s16(data))));
+    vst1q_s32(&vals[n + 4], missing_16bit_to_32bit(vmovl_u16(vget_high_s16(data))));
   }
 #endif
   offset += n;

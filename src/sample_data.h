@@ -27,6 +27,9 @@ class SampleData {
   std::vector<char> buf;
   Header * header;
   std::vector<std::int32_t> get_geno(FormatType &type);
+  std::vector<std::int32_t> parse_8bit_ints(FormatType & type);
+  std::vector<std::int32_t> parse_16bit_ints(FormatType & type);
+  std::vector<std::int32_t> parse_32bit_ints(FormatType & type);
 public:
   SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData(){};

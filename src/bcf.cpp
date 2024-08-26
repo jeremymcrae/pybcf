@@ -55,7 +55,7 @@ Variant BCF::nextvar() {
   return var;
 }
 
-void BCF::set_region(std::string chrom, std::uint32_t start, std::uint32_t end) {
+void BCF::set_region(std::string chrom, std::int32_t start, std::int32_t end) {
   if (!idxfile.has_index) {
     throw std::invalid_argument("cannot fetch without an index file");
   }

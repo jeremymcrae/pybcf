@@ -17,12 +17,12 @@ class BCF {
   igzstream infile;
   IndexFile idxfile;
   std::string query_chrom="";
-  std::uint32_t query_start=0;
-  std::uint32_t query_end=1 << 31;
+  std::int32_t query_start=0;
+  std::int32_t query_end=1 << 31;
 public:
   BCF(std::string path, std::string index_path="");
   Variant nextvar();
-  void set_region(std::string chrom, std::uint32_t start=0, std::uint32_t end=1 << 31);
+  void set_region(std::string chrom, std::int32_t start=0, std::int32_t end=1 << 31);
   Header header;
 };
 

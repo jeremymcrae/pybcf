@@ -42,7 +42,7 @@ IndexFile::IndexFile(std::string path) {
   std::uint64_t v_offset;
   std::int32_t n_chunks;
   Offsets bin_offsets, chunk_begin, chunk_end;
-  for (std::uint32_t i=0; i< n_ref; i++) {
+  for (std::int32_t i=0; i < n_ref; i++) {
     std::unordered_map<std::uint32_t, Bin> bins;
     infile.read(reinterpret_cast<char *>(&n_bins), sizeof(n_bins));
     
@@ -53,7 +53,7 @@ IndexFile::IndexFile(std::string path) {
 
       bin_offsets = parse_virtual_offset(v_offset);
       std::vector<Chunk> chunks;
-      for (std::uint32_t k=0; k<n_chunks; k++) {
+      for (std::int32_t k=0; k<n_chunks; k++) {
         infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
         chunk_begin = parse_virtual_offset(v_offset);
         infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
@@ -87,7 +87,6 @@ int IndexFile::reg2bin(std::int64_t beg, std::int64_t end) {
 /// @param end end position of region
 /// @return currently integer, but this should be an iterator instead
 std::vector<std::uint32_t> IndexFile::reg2bins(std::int64_t beg, std::int64_t end) {
-  int max_bins = bin_limit();
   
   std::vector<std::uint32_t> bins;
   int l, t, n, s = min_shift + depth * 3;

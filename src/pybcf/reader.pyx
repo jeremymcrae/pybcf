@@ -15,7 +15,7 @@ cdef extern from 'bcf.h' namespace 'bcf':
         BCF(string path, string index_path) except +
         BCF() except +
         Variant nextvar() except +
-        void set_region(string chrom, uint32_t start, uint32_t end) except +
+        void set_region(string chrom, int32_t start, int32_t end) except +
         Header header
 
 cdef extern from 'header.h' namespace 'bcf':
@@ -390,7 +390,7 @@ cdef class BcfReader:
       '''
       return self.header.samples
     
-    def fetch(self, chrom, uint32_t start=1, uint32_t stop=2**29):
+    def fetch(self, chrom, int32_t start=1, int32_t stop=2**29):
         ''' fetches all variants within a genomic region
         
         Args:

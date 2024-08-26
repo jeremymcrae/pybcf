@@ -46,6 +46,8 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   }
 }
 
+/// @brief get key names as strings
+/// @return vector of sample format keys
 std::vector<std::string> SampleData::get_keys() {
   std::vector<std::string> key_names;
   for (auto & x : keys) {
@@ -54,6 +56,9 @@ std::vector<std::string> SampleData::get_keys() {
   return key_names;
 }
 
+/// @brief figure out the data type for a given format key
+/// @param key string for the format key to check
+/// @return struct containing details of the type, number of values, and buffer offset
 FormatType SampleData::get_type(std::string &key) {
   if (keys.count(key) == 0) {
     throw std::invalid_argument("no entries for " + key + " in data");
@@ -61,6 +66,9 @@ FormatType SampleData::get_type(std::string &key) {
   return keys[key];
 }
 
+/// @brief get vector of ints for a given format key
+/// @param type struct containing the type size, number of values etc
+/// @return 
 std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   if (type.is_geno) {
     return get_geno(type);
@@ -82,10 +90,15 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   return vals;
 }
 
-/// convert 8-bit missing values to the 32-bit form
 #if defined(__x86_64__)
+/// @brief convert vectorized 8-bit missing values to the 32-bit form
+/// @param data 128-bit register containing 4 32-bit values
+/// @return register where the missing values have been converted from their
+///         8-bit encoding to a standard 32-bit encoding
 __m128i missing_8bit_to_32bit(__m128i data) {
   __m128 mask;
+  // 8-bit missing values were 0x80, but after extended to 32-bit became 0xffffff80
+  // we need to convert these to 0x80000000, which is the missing value for 32-bit values
   const __m128i missing_8bit = _mm_set_epi32(0xffffff80, 0xffffff80, 0xffffff80, 0xffffff80);
   const __m128i missing_32bit = _mm_set_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000);
   
@@ -99,8 +112,14 @@ __m128i missing_8bit_to_32bit(__m128i data) {
   return (__m128i) _mm_or_ps((__m128) data, _mm_and_ps((__m128) missing_32bit, (__m128) mask));
 }
 #elif defined(__aarch64__)
+/// @brief convert vectorized 8-bit missing values to the 32-bit form
+/// @param data 128-bit register containing 4 32-bit values
+/// @return register where the missing values have been converted from their
+///         8-bit encoding to a standard 32-bit encoding
 int32x4_t missing_8bit_to_32bit(int32x4_t data) {
   int32x4_t mask;
+  // 8-bit missing values were 0x80, but after extended to 32-bit became 0xffffff80
+  // we need to convert these to 0x80000000, which is the missing value for 32-bit values
   const int32x4_t missing_8bit = vdupq_n_s32(0xffffff80);
   const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
@@ -115,10 +134,15 @@ int32x4_t missing_8bit_to_32bit(int32x4_t data) {
 }
 #endif
 
-/// convert 16-bit missing values to the 32-bit form
 #if defined(__x86_64__)
-  __m128i missing_16bit_to_32bit(__m128i data) {
+/// @brief convert vectorized 16-bit missing values to the 32-bit form
+/// @param data 128-bit register containing 4 32-bit values
+/// @return register where the missing values have been converted from their
+///         16-bit encoding to a standard 32-bit encoding
+__m128i missing_16bit_to_32bit(__m128i data) {
   __m128 mask;
+  // 16-bit missing values were 0x8000, but after extended to 32-bit became 0xffff8000
+  // we need to convert these to 0x80000000, which is the missing value for 32-bit values
   const __m128i missing_16bit = _mm_set_epi32(0xffff8000, 0xffff8000, 0xffff8000, 0xffff8000);
   const __m128i missing_32bit = _mm_set_epi32(0x80000000, 0x80000000, 0x80000000, 0x80000000);
   
@@ -132,8 +156,14 @@ int32x4_t missing_8bit_to_32bit(int32x4_t data) {
   return (__m128i) _mm_or_ps((__m128) data, _mm_and_ps((__m128) missing_32bit, (__m128) mask));
 }
 #elif defined(__aarch64__)
+/// @brief convert vectorized 16-bit missing values to the 32-bit form
+/// @param data 128-bit register containing 4 32-bit values
+/// @return register where the missing values have been converted from their
+///         16-bit encoding to a standard 32-bit encoding
 int32x4_t missing_16bit_to_32bit(int32x4_t data) {
   int32x4_t mask;
+  // 16-bit missing values were 0x8000, but after extended to 32-bit became 0xffff8000
+  // we need to convert these to 0x80000000, which is the missing value for 32-bit values
   const int32x4_t missing_16bit = vdupq_n_s32(0xffff8000);
   const int32x4_t missing_32bit = vdupq_n_s32(0x80000000);
   
@@ -148,6 +178,14 @@ int32x4_t missing_16bit_to_32bit(int32x4_t data) {
 }
 #endif
 
+/// @brief parse 8-bit ints from the buffer
+///
+/// This uses vectorized operations if available on x86_64 and aarch64
+///
+/// @param type struct containing number of values per sample (so we can determine 
+///             how many values to parse), and offset within the buffer (so we
+///             know where to start).
+/// @return vector of data values as 32-bit ints
 std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
   std::uint64_t max_n = type.n_vals * n_samples;
@@ -159,6 +197,10 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
   if (__builtin_cpu_supports("avx2")) {
     __m256i data, mask;
     __m128i low, hi;
+    // There are two types of missing data values, one for actual missing data,
+    // and one for data not recorded. We collapse these into a single missing
+    // value, since we later convert all the values to float (outisde the c++ 
+    // code).
     // std::int32_t missing - 8bit: 0x80, 16bit: 0x8000 etc
     // std::int32_t not_recorded - missing | 0x1 8bit: 0x81, 16bit: 0x8001, 32bit: 0x80000001
     __m256i missing = _mm256_set_epi32(0x80808080, 0x80808080, 0x80808080, 0x80808080,
@@ -169,7 +211,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
     for (; n < (max_n - (max_n % 32)); n += 32) {
       data = _mm256_loadu_si256((__m256i *) &buf[offset + n]);
       
-      // replace the missing indicator values with standard missing values
+      // replace the not_recorded values with standard missing values
       mask = _mm256_cmpeq_epi8(data, not_recorded);
       data = (__m256i) _mm256_andnot_ps((__m256) mask, (__m256) data);  // erase original not recorded values
       data = (__m256i) _mm256_or_ps((__m256) data, _mm256_and_ps((__m256) missing, (__m256) mask));  // replace not recorded values with standard missing value
@@ -197,7 +239,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
     // load data from the array into SIMD registers.
     data = vld1q_s8((std::int8_t *)&buf[offset + n]);
 
-    // replace the missing indicator values with standard missing values
+    // replace the not_recorded values with standard missing values
     mask = vceqq_s8(data, not_recorded);            // find and set missing values
     data = vandq_s8(data, vmvnq_s8(mask));          // erase original missing values
     data = vorrq_s8(data, vandq_s8(missing, mask)); // swap in new missing values
@@ -219,6 +261,14 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
   return vals;
 }
 
+/// @brief parse 16-bit ints from the buffer
+///
+/// This uses vectorized operations if available on x86_64 and aarch64
+///
+/// @param type struct containing number of values per sample (so we can determine
+///             how many values to parse), and offset within the buffer (so we
+///             know where to start).
+/// @return vector of data values as 32-bit ints
 std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
   std::uint64_t max_n = type.n_vals * n_samples;
@@ -239,8 +289,8 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
     
     for (; n < (max_n - (max_n % 16)); n += 16) {
       data = _mm256_loadu_si256((__m256i *) &buf[offset + n]);
-      
-      // replace the missing indicator values with standard missing values
+
+      // replace the not_recorded values with standard missing values
       mask = _mm256_cmpeq_epi16(data, not_recorded);
       data = (__m256i) _mm256_andnot_ps((__m256) mask, (__m256) data);  // erase original not recorded values
       data = (__m256i) _mm256_or_ps((__m256) data, _mm256_and_ps((__m256) missing, (__m256) mask));  // replace not recorded values with standard missing value
@@ -263,7 +313,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
     // load data from the array into SIMD registers.
     data = vld1q_s16((std::int16_t *)&buf[offset + n]);
 
-    // replace the missing indicator values with standard missing values
+    // replace the not_recorded values with standard missing values
     mask = vceqq_s16(data, not_recorded);            // find and set missing values
     data = vandq_s16(data, vmvnq_s16(mask));          // erase original missing values
     data = vorrq_s16(data, vandq_s16(missing, mask)); // swap in new missing values
@@ -280,6 +330,14 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
   return vals;
 }
 
+/// @brief parse 32-bit ints from the buffer
+///
+/// This uses vectorized operations if available on x86_64 and aarch64
+///
+/// @param type struct containing number of values per sample (so we can determine
+///             how many values to parse), and offset within the buffer (so we
+///             know where to start).
+/// @return vector of data values as 32-bit ints
 std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
   std::vector<std::int32_t> vals;
   std::uint64_t max_n = type.n_vals * n_samples;
@@ -298,8 +356,8 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
                                            0x80000001, 0x80000001, 0x80000001, 0x80000001);
     for (; n < (max_n - (max_n % 8)); n += 8) {
       data = _mm256_loadu_si256((__m256i *) &buf[offset + n]);
-      
-      // replace the missing indicator values with standard missing values
+
+      // replace the not_recorded values with standard missing values
       mask = _mm256_cmpeq_epi16(data, not_recorded);
       data = (__m256i) _mm256_andnot_ps((__m256) mask, (__m256) data);  // erase original not recorded values
       data = (__m256i) _mm256_or_ps((__m256) data, _mm256_and_ps((__m256) missing, (__m256) mask));  // replace not recorded values with standard missing value
@@ -317,7 +375,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
     // load data from the array into SIMD registers.
     data = vld1q_s32((std::int32_t *)&buf[offset + n]);
 
-    // replace the missing indicator values with standard missing values
+    // replace the not_recorded values with standard missing values
     mask = vceqq_s32(data, not_recorded);            // find and set missing values
     data = vandq_s32(data, vmvnq_s32(mask));          // erase original missing values
     data = vorrq_s32(data, vandq_s32(missing, mask)); // swap in new missing values
@@ -332,7 +390,17 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
   return vals;
 }
 
-
+/// @brief optimized parsing of genotype data
+///
+/// The genotypes are stored as ints, so we could use the other int parsing
+/// functions to extract the values, but the genotypes also store phase info,
+/// are offset by 1, and have a genotype-specific missing value, so it's easier
+/// to have a function dedictated to parsing genotypes only. This is optimized
+/// for parsing 8-bit genotypes on x84_64 and aarch64.
+///
+/// @param type struct containing number of values per person, and where in the
+///             buffer to start parsing
+/// @return vector of genotype values as 32-bit ints (missing=0x80000000)
 std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   // confirm we checked sample phasing if we look at the genotype data
   phase_checked = true;
@@ -353,7 +421,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
     __m256i sub = _mm256_set_epi64x(0x0101010101010101, 0x0101010101010101, 0x0101010101010101, 0x0101010101010101);
     __m128i missing_mask = _mm_set_epi32(0x00ff00ff, 0x00ff00ff, 0x00ff00ff, 0x00ff00ff);
     __m128i missing_geno = _mm_set_epi8(-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1);
-    __m256i missing_indicator = _mm256_set_epi32(0x81818181, 0x81818181, 0x81818181, 0x81818181,
+    __m256i not_recorded = _mm256_set_epi32(0x81818181, 0x81818181, 0x81818181, 0x81818181,
                                                  0x81818181, 0x81818181, 0x81818181, 0x81818181);
     __m128i shuffle = _mm_set_epi8(0, 2, 4, 6, 8, 10, 12, 14, 17, 3, 5, 7, 9, 11, 13, 15);
     
@@ -364,7 +432,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
       
       // account for missing values (due to different ploidy between samples)
-      missed = _mm256_cmpeq_epi8(initial, missing_indicator);           // find missing values
+      missed = _mm256_cmpeq_epi8(initial, not_recorded);           // find missing values
       geno = (__m256i) _mm256_andnot_ps((__m256)missed, (__m256)geno);  // erase original missing values
       geno = (__m256i) _mm256_or_ps((__m256)geno, (__m256)missed);      // swap in new missing values
 
@@ -414,7 +482,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
     uint8x16_t mask_geno = vdupq_n_u8(0xfe);
     uint8x16_t sub = vdupq_n_u8(0x01);
     int8x8_t missing_geno = vdup_n_s8(-1);
-    int8x16_t missing_indicator = vdupq_n_s8(0x80);
+    int8x16_t not_recorded = vdupq_n_s8(0x80);
     
     for (; n < (max_n - (max_n % 16)); n += 16) {
       // load data from the array into SIMD registers.
@@ -425,9 +493,9 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
                                                  // and subtract 1 to get allele
 
       // account for missing values (due to different ploidy between samples)
-      missed = vceqq_s8(initial, missing_indicator);  // find and set missing values
-      geno = vandq_s8(geno, vmvnq_s8(missed));         // erase original missing values
-      geno = vorrq_s8(geno, missed);                   // swap in new missing values
+      missed = vceqq_s8(initial, not_recorded);  // find and set missing values
+      geno = vandq_s8(geno, vmvnq_s8(missed));   // erase original missing values
+      geno = vorrq_s8(geno, missed);             // swap in new missing values
 
       // store genotypes as 32-bit ints, have to expand all values in turn
       wider = vmovl_s8(vget_low_s8(geno));
@@ -474,6 +542,9 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   return vals;
 }
 
+/// @brief parse float values from the buffer
+/// @param type struct with number of samples per person, and buffer offset
+/// @return vector of floats
 std::vector<float> SampleData::get_floats(FormatType & type) {
   std::vector<float> vals;
   vals.resize(type.n_vals * n_samples);
@@ -481,6 +552,9 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
   return vals;
 }
 
+/// @brief parse strings from the buffer
+/// @param type struct with number of samples per person, and buffer offset
+/// @return vector of strings
 std::vector<std::string> SampleData::get_strings(FormatType & type) {
   std::vector<std::string> vals;
   vals.resize(n_samples);

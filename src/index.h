@@ -35,9 +35,7 @@ class IndexFile {
 public:
   IndexFile(std::string path);
   IndexFile() {};
-  int reg2bin(std::int64_t beg, std::int64_t end);
-  std::vector<std::uint32_t> reg2bins(std::int64_t beg, std::int64_t end);
-  int bin_limit();
+  std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end);
   std::uint32_t get_bin_depth(std::uint32_t bin_idx);
   std::uint32_t get_bin_offset(std::uint32_t bin_idx);
   Offsets query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end);

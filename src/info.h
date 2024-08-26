@@ -22,7 +22,6 @@ class Info {
   
   Header * header;
   bool is_parsed=false;
-  std::uint32_t offset=0;
   std::uint32_t n_info=0;
   char * buf;
   
@@ -37,7 +36,12 @@ class Info {
   std::vector<std::vector<float>> vector_floats;         // type 3
   std::vector<std::vector<std::int32_t>> vector_ints;    // type 4
 public:
-  Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _n_info);
+  /// @brief start Info object for a variant. Doesn't parse data until required
+  /// @param _buf data to parse for info fields and values. The pointer points to
+  ///             the data of the info data
+  /// @param _header pointer to bcf header data, so we can interpret info fields
+  /// @param _n_info number of info fields
+  Info(char * buf, Header * header, std::uint32_t n_info) : buf(buf), header(header), n_info(n_info) {};
   Info() {};
   std::vector<std::string> get_keys();
   InfoType get_type(std::string &key);

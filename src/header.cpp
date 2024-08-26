@@ -117,6 +117,8 @@ Header::Header(std::string & text) {
   
 }
 
+/// @brief get contigs/chromosomes defined in BCF header
+/// @return vector of chromosome/contig names
 std::vector<std::string> Header::get_contigs() {
   std::vector<std::uint32_t> keys;
   keys.reserve(contigs.size());
@@ -133,6 +135,8 @@ std::vector<std::string> Header::get_contigs() {
   return vals;
 }
 
+/// @brief get info fields used in the BCF header
+/// @return vector of info keys (as strings) used in the BCF
 std::vector<std::string> Header::get_info() {
   std::vector<std::uint32_t> keys;
   keys.reserve(info.size());
@@ -149,6 +153,8 @@ std::vector<std::string> Header::get_info() {
   return vals;
 }
 
+/// @brief get filters used in the BCF
+/// @return vector of unqiue filter values used in the BCF
 std::vector<std::string> Header::get_filters() {
   std::vector<std::uint32_t> keys;
   keys.reserve(filters.size());
@@ -165,6 +171,8 @@ std::vector<std::string> Header::get_filters() {
   return vals;
 }
 
+/// @brief get format fields used in the BCF header
+/// @return vector of format keys (as strings) used in the BCF
 std::vector<std::string> Header::get_formats() {
   std::vector<std::uint32_t> keys;
   keys.reserve(format.size());

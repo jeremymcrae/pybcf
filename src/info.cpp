@@ -1,18 +1,12 @@
 
 #include <iostream>
 #include <bitset>
+#include <vector>
 
 #include "info.h"
 #include "types.h"
 
 namespace bcf {
-
-Info::Info(char * _buf, Header * _header, std::uint32_t _offset, std::uint32_t _n_info) {
-  buf = _buf;
-  header = _header;
-  offset = _offset;
-  n_info = _n_info;
-}
 
 std::vector<std::string> Info::get_keys() {
   if (!is_parsed) {
@@ -26,8 +20,9 @@ std::vector<std::string> Info::get_keys() {
   return key_vals;
 }
 
+/// @brief parse the info data for keys and values
 void Info::parse() {
-  std::uint32_t buf_idx = offset;
+  std::uint32_t buf_idx = 0;
   Typed type_val;
 
   // read the info fields. TODO - find out a way to skip this if not required

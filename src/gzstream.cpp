@@ -81,6 +81,8 @@ gzstreambuf * gzstreambuf::close() {
     return (gzstreambuf*)0;
 }
 
+/// @brief seek the bgzip file to a new offset
+/// @param offset file offset of new bgzip block to seek to
 void gzstreambuf::seek(bcf::Offsets offset) {
     // reset the input buffer
     setp( buffer, buffer + (bufferSize-1));

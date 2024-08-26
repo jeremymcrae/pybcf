@@ -12,11 +12,17 @@
 
 namespace bcf {
 
+/// @brief contains details of a data type (number of values per person, data type etc)
 struct FormatType {
-  std::uint8_t data_type;  // which type the data is
-  std::uint8_t type_size;  // size of individual data entries
-  std::uint32_t offset;    // where the data starts in the buffer
-  std::uint32_t n_vals;    // number of entries
+  // which type the data is (1=int8, 2=int16, 3=int32, 5=float, 7=char)
+  std::uint8_t data_type;
+  // size of individual data entries
+  std::uint8_t type_size;
+  // where the data starts in the buffer
+  std::uint32_t offset;
+  // number of entries per person
+  std::uint32_t n_vals; 
+  // true/false for whether the type is for genotypes
   bool is_geno;
 };
 

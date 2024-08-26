@@ -10,7 +10,12 @@
 
 namespace bcf {
 
-
+/// @brief parse the uncompressed and compressed parts of a virtual offset
+/// @param v_offset virtual offset (contains compressed offset in highest 48 bits,
+///                 and uncompressed offset in lowest 16 bits). The uncompressed
+///                 portion is 65536 (2^16) at max, since that is the max size of
+///                 an uncompressed bgzip block
+/// @return struct containing u_offset and c_offset fields
 Offsets parse_virtual_offset(std::uint64_t v_offset) {
   std::uint64_t u_offset = v_offset & 0x000000000000ffff;
   std::uint64_t c_offset = v_offset >> 16;
@@ -67,17 +72,6 @@ IndexFile::IndexFile(std::string path) {
   has_index = true;
 }
 
-/// calculate bin given an alignment covering [beg,end) (zero-based, half-close-half-open)
-int IndexFile::reg2bin(std::int64_t beg, std::int64_t end) {
-  int l, s = min_shift, t = ((1 << depth * 3) - 1) / 7;
-  for (--end, l = depth; l > 0; --l, s += 3, t -= 1 << l * 3) {
-    if (beg >> s == end >> s) {
-      return t + (beg >> s);
-    }
-  }
-  return 0;
-}
-
 /// @brief calculate the list of bins that may overlap with region [beg,end) (zero-based).
 ///
 /// This code is from https://samtools.github.io/hts-specs/CSIv1.pdf, but adapted
@@ -86,8 +80,7 @@ int IndexFile::reg2bin(std::int64_t beg, std::int64_t end) {
 /// @param beg start position of region
 /// @param end end position of region
 /// @return currently integer, but this should be an iterator instead
-std::vector<std::uint32_t> IndexFile::reg2bins(std::int64_t beg, std::int64_t end) {
-  
+std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) {
   std::vector<std::uint32_t> bins;
   int l, t, n, s = min_shift + depth * 3;
   for (--end, l = n = t = 0; l <= depth; s -= 3, t += 1 << l * 3, ++l) {
@@ -99,11 +92,6 @@ std::vector<std::uint32_t> IndexFile::reg2bins(std::int64_t beg, std::int64_t en
     }
   }
   return bins;
-}
-
-/* calculate maximum bin number -- valid bin numbers range within [0,bin_limit) */
-int IndexFile::bin_limit() {
-  return ((1 << (depth + 1) * 3) - 1) / 7;
 }
 
 /// @brief find the depth for a bin
@@ -170,8 +158,8 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
   }
   
   // find the bins which could overlap a position
-  auto bins = reg2bins(beg, end);
-  
+  auto bins = region_to_bins(beg, end);
+
   // cull bins which do not exist in the indexfile, and find the bin with the
   // closest start to the position, preferrably immediately upstream of the begin
   // position, but allow using the first downstream, if upstream bins do not exist
@@ -216,12 +204,3 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
 }
 
 }
-
-// int main() {
-//   bcf::IndexFile indexfile = bcf::IndexFile("/users/jmcrae/apps/pybcf/chr5.110000001-115000000.bcf.csi");
-//   std::cout << "bin: " << indexfile.reg2bin(111000000, 112000000) << std::endl;
-//   indexfile.query(4, 111000000);
-//   return 0;
-// }
-
-// g++ -stdlib=libc++ -std=c++11 -lz index.cpp gzstream.cpp; ./a.out

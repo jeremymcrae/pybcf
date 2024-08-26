@@ -8,6 +8,9 @@
 namespace bcf {
 
 
+/// @brief open BCF file
+/// @param path path to bcf file
+/// @param index_path path to index file (if exists)
 BCF::BCF(std::string path, std::string index_path) {
   infile.open(path.c_str());
   if (infile.fail()) {
@@ -37,6 +40,7 @@ BCF::BCF(std::string path, std::string index_path) {
   
 }
 
+// extract the next variant from the BCF
 Variant BCF::nextvar() {
   Variant var = Variant(infile, header);
   if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
@@ -55,6 +59,10 @@ Variant BCF::nextvar() {
   return var;
 }
 
+/// @brief define genome region to extract variants from
+/// @param chrom chromosome/contig name
+/// @param start start position (in base pairs)
+/// @param end end position (in base-pairs)
 void BCF::set_region(std::string chrom, std::int32_t start, std::int32_t end) {
   if (!idxfile.has_index) {
     throw std::invalid_argument("cannot fetch without an index file");

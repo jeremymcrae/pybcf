@@ -4,6 +4,9 @@
 
 namespace bcf {
 
+/// @brief start a Varint object
+/// @param infile file to read varint data from (as input gzstream)
+/// @param header for interpreting contig name, info and sample fields
 Variant::Variant(igzstream & infile,  Header & header) {
 
   std::uint32_t metadata_len=0;
@@ -73,7 +76,7 @@ Variant::Variant(igzstream & infile,  Header & header) {
   }
   
   // prepare the info fields and format fields
-  info = Info(&buf[0], &header, idx, n_info);
+  info = Info(&buf[idx], &header, n_info);
   sample_data = SampleData(infile, header, sampledata_len, n_fmt, n_sample);
 }
 

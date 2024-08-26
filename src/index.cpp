@@ -13,8 +13,8 @@ namespace bcf {
 /// @brief parse the uncompressed and compressed parts of a virtual offset
 /// @param v_offset virtual offset (contains compressed offset in highest 48 bits,
 ///                 and uncompressed offset in lowest 16 bits). The uncompressed
-///                 portion is 65536 (2^16) at max, since that is the max size of
-///                 an uncompressed bgzip block
+///                 offset can be 65536 at max (2^16), since that is the max size
+///                 of an uncompressed bgzip block
 /// @return struct containing u_offset and c_offset fields
 Offsets parse_virtual_offset(std::uint64_t v_offset) {
   std::uint64_t u_offset = v_offset & 0x000000000000ffff;

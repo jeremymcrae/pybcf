@@ -40,8 +40,9 @@ void Info::parse() {
   for (std::uint32_t i = 0; i < n_info; i++) {
     type_val = {buf, buf_idx};
     id_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
-    key = header->info[id_idx].id;
-    number = header->info[id_idx].number;
+    InfoField & field = header->info[id_idx];
+    key = field.id;
+    number = field.number;
     has_multiple = number == "A" || number == "R" || number == "G";
     if ((number.find_first_not_of("0123456789") == std::string::npos)) {
       has_multiple |= std::stol(number) > 1;

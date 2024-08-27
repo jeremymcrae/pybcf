@@ -41,7 +41,7 @@ public:
   ///             the data of the info data
   /// @param _header pointer to bcf header data, so we can interpret info fields
   /// @param _n_info number of info fields
-  Info(char * buf, Header * header, std::uint32_t n_info) : buf(buf), header(header), n_info(n_info) {};
+  Info(char * buf, Header * header, std::uint32_t n_info) : header(header), n_info(n_info),  buf(buf) {};
   Info() {};
   std::vector<std::string> get_keys();
   InfoType get_type(std::string &key);

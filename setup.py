@@ -10,19 +10,21 @@ import platform
 from distutils.core import Extension
 from Cython.Build import cythonize
 
-EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include']
 EXTRA_LINK_ARGS = []
-if sys.platform == "darwin":
+EXTRA_COMPILE_ARGS = []
+if sys.platform == 'linux':
+    EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include']
+elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += [
         "-stdlib=libc++",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
-        '-mavx',
-        '-mavx2',
         ]
     EXTRA_LINK_ARGS += [
         "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
         ]
+elif sys.platform == "win32":
+    EXTRA_COMPILE_ARGS += ['/std:c++14', '/O2']
 
 if platform.machine() == 'x86_64':
     EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']

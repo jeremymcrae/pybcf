@@ -17,6 +17,7 @@ if sys.platform == 'linux':
 elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += [
         "-stdlib=libc++",
+        "-std=c++11",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
         ]

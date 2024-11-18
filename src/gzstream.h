@@ -33,6 +33,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <cstdio>
 #include "zlib.h"
 
 #include "index.h"
@@ -54,8 +55,8 @@ private:
     char             buffer[bufferSize]; // data buffer
     char             opened;             // open/close state of stream
     int              mode;               // I/O mode
-    int              fd=-1;
     char             fmode[10];
+    FILE *           handle;
 public:
     gzstreambuf() : opened(0) {
         setp( buffer, buffer + (bufferSize-1));

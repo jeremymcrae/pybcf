@@ -30,7 +30,6 @@
 #include <iostream>
 #include <string.h>  // for memcpy
 #include <stdexcept>
-#include <fcntl.h>
 #include <unistd.h>
 
 #ifdef GZSTREAM_NAMESPACE
@@ -62,8 +61,12 @@ gzstreambuf* gzstreambuf::open( const char* name, int open_mode) {
         || ((mode & std::ios::in) && (mode & std::ios::out)))
         return (gzstreambuf*)0;
     get_fmode(fmode, mode);
-    fd = ::open(name, open_mode);
-    file = gzdopen( dup(fd), fmode);
+    handle = fopen(name, fmode);
+    if (!handle) {
+        return 0;
+    }
+    
+    file = gzdopen(dup(fileno(handle)), fmode);
     if (file == 0)
         return (gzstreambuf*)0;
     opened = 1;
@@ -90,10 +93,11 @@ void gzstreambuf::seek(bcf::Offsets offset) {
           buffer + 4); // end position
     
     // seek using the file descriptor to an offset in the compressed file
-    ::lseek(fd, offset.c_offset, SEEK_SET);
-    
+    fseek(handle, offset.c_offset, SEEK_SET);
+    ftell(handle);
+
     // open a new gzfile object using the file descriptor (at new offset);
-    file = gzdopen(dup(fd), fmode);
+    file = gzdopen(dup(fileno(handle)), fmode);
     
     if (file == 0) {
         throw std::invalid_argument("cannot seek within this gzfile");

@@ -6,8 +6,8 @@ include src/pybcf/*.py
 include src/pybcf/*.pyx
 include src/*.h
 include src/*.cpp
-include src/gzstream/gzstream.h
-include src/gzstream/gzstream.C
+include src/gzstream.h
+include src/gzstream.C
 include src/zlib-ng/*.h
 include src/zlib-ng/*.c
 recursive-include src/zlib-ng/arch/*.h

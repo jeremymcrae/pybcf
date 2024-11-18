@@ -55,6 +55,7 @@ private:
     char             opened;             // open/close state of stream
     int              mode;               // I/O mode
     int              fd=-1;
+    char             fmode[10];
 public:
     gzstreambuf() : opened(0) {
         setp( buffer, buffer + (bufferSize-1));

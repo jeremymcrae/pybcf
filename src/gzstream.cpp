@@ -61,10 +61,9 @@ gzstreambuf* gzstreambuf::open( const char* name, int open_mode) {
     if ((mode & std::ios::ate) || (mode & std::ios::app)
         || ((mode & std::ios::in) && (mode & std::ios::out)))
         return (gzstreambuf*)0;
-    char fmode[10];
     get_fmode(fmode, mode);
     fd = ::open(name, open_mode);
-    file = gzdopen( fd, fmode);
+    file = gzdopen( dup(fd), fmode);
     if (file == 0)
         return (gzstreambuf*)0;
     opened = 1;
@@ -90,19 +89,13 @@ void gzstreambuf::seek(bcf::Offsets offset) {
           buffer + 4,  // read position
           buffer + 4); // end position
     
-    // We must close the previous gzFile, otherwise we leak memory on each seek.
-    // But when we close the gzFile, this also closes the file descriptor, so we
-    // duplicate the file descriptor first.
-    int new_fd = dup(fd);
-    
     // seek using the file descriptor to an offset in the compressed file
-    ::lseek(new_fd, offset.c_offset, SEEK_SET);
+    ::lseek(fd, offset.c_offset, SEEK_SET);
     
     // open a new gzfile object using the file descriptor (at new offset)
-    char fmode[10];
-    get_fmode(fmode, mode);
-    file = gzdopen(new_fd, fmode);
-    fd = new_fd;
+    // char fmode[10];
+    // get_fmode(fmode, mode);
+    file = gzdopen(dup(fd), fmode);
     
     if (file == 0) {
         throw std::invalid_argument("cannot seek within this gzfile");

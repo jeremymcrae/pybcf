@@ -92,9 +92,7 @@ void gzstreambuf::seek(bcf::Offsets offset) {
     // seek using the file descriptor to an offset in the compressed file
     ::lseek(fd, offset.c_offset, SEEK_SET);
     
-    // open a new gzfile object using the file descriptor (at new offset)
-    // char fmode[10];
-    // get_fmode(fmode, mode);
+    // open a new gzfile object using the file descriptor (at new offset);
     file = gzdopen(dup(fd), fmode);
     
     if (file == 0) {

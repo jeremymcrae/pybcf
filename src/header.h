@@ -1,6 +1,7 @@
 #ifndef BCF_HEADER_H
 #define BCF_HEADER_H
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_set>

@@ -18,6 +18,8 @@ elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += [
         "-stdlib=libc++",
         "-std=c++11",
+        '-mavx',   # required for macosx testing on github actions
+        '-mavx2',  # required for macosx testing on github actions
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
         ]

@@ -60,6 +60,8 @@ def build_zlib():
                 ]
         include_dirs.append(str(build_dir / 'Release'))
     
+    print('static lib size:', (build_dir / 'Release' / 'zlibstatic.lib').stat())
+    
     return include_dirs, objs
 
 include_dirs, zlib  = build_zlib()

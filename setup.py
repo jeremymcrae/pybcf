@@ -62,7 +62,7 @@ def build_zlib():
 
 include_dir1, include_dir2, zlib  = build_zlib()
 if sys.platform == 'win32':
-    EXTRA_LINK_ARGS += ['/link', objs[0]]
+    EXTRA_LINK_ARGS += ['/link', zlib[0]]
 
 ext = cythonize([
     Extension('pybcf.reader',

@@ -76,6 +76,7 @@ ext = cythonize([
             'src/variant.cpp'],
         extra_objects=zlib,
         include_dirs=['src', include_dir1, include_dir2],
+        library_dirs=[include_dir2],
         language='c++'),
     ])
 

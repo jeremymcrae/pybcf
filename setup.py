@@ -57,6 +57,7 @@ def build_zlib():
     if sys.platform == 'win32':
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib'),
                 ]
+        EXTRA_LINK_ARGS += ['/link', objs[0]]
     
     return str(build_dir), str(source_dir), objs
 
@@ -76,7 +77,6 @@ ext = cythonize([
             'src/variant.cpp'],
         extra_objects=zlib,
         include_dirs=['src', include_dir1, include_dir2],
-        library_dirs=[include_dir2],
         language='c++'),
     ])
 

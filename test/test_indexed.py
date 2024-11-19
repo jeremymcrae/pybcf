@@ -182,6 +182,20 @@ class TestIndexed(unittest.TestCase):
         variants = list(bcf.fetch(last_chrom, last_pos+1, last_pos+1))
         self.assertTrue(len(variants) == 0)
     
+    def test_multiple_fetches(self):
+        ''' check if we can fetch multiple times and get variants
+        '''
+        
+        bcf = BcfReader(self.test_cases)
+        sites = [(x.chrom, x.pos) for x in bcf]
+        last_chrom, last_pos = sites[-1]
+        
+        variants = list(bcf.fetch(last_chrom, last_pos, last_pos))
+        self.assertTrue(len(variants) == 1)
+        
+        variants = list(bcf.fetch(last_chrom, last_pos, last_pos))
+        self.assertTrue(len(variants) == 1)
+    
     def test_raise_error_without_index(self):
         ''' check we get an error if we fetch from a bcf without an index file
         '''

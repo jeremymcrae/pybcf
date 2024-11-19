@@ -59,7 +59,7 @@ def build_zlib():
                 str(build_dir / 'Release' / 'zlib1.dll'),
                 ]
     
-    return str(build_dir), source_dir, objs
+    return str(build_dir), str(source_dir), objs
 
 include_dir1, include_dir2, zlib  = build_zlib()
 

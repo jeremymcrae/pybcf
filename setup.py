@@ -18,8 +18,8 @@ elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += [
         "-stdlib=libc++",
         "-std=c++11",
-        '-mavx',   # required for macosx testing on github actions
-        '-mavx2',  # required for macosx testing on github actions
+        # '-mavx',   # required for macosx testing on github actions
+        # '-mavx2',  # required for macosx testing on github actions
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
         ]
@@ -55,11 +55,13 @@ def build_zlib():
     
     objs = [str(build_dir / 'libz.a')]
     if sys.platform == 'win32':
-        objs = [str(build_dir / 'Release' / 'zlibstatic.lib')]
+        objs = [str(build_dir / 'Release' / 'zlibstatic.lib'), 
+                str(build_dir / 'Release' / 'zlib1.dll'),
+                ]
     
-    return str(build_dir), objs
+    return str(build_dir), source_dir, objs
 
-include_dir, zlib  = build_zlib()
+include_dir1, include_dir2, zlib  = build_zlib()
 
 ext = cythonize([
     Extension('pybcf.reader',
@@ -74,7 +76,7 @@ ext = cythonize([
             'src/sample_data.cpp',
             'src/variant.cpp'],
         extra_objects=zlib,
-        include_dirs=['src', include_dir],
+        include_dirs=['src', include_dir1, include_dir2],
         language='c++'),
     ])
 

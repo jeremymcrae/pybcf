@@ -57,6 +57,7 @@ private:
     int              mode;               // I/O mode
     char             fmode[10];
     FILE *           handle;
+    std::string      filename;
 public:
     gzstreambuf() : opened(0) {
         setp( buffer, buffer + (bufferSize-1));

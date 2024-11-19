@@ -32,6 +32,8 @@
 #include <stdexcept>
 #include <unistd.h>
 
+#include <iostream>
+
 #ifdef GZSTREAM_NAMESPACE
 namespace GZSTREAM_NAMESPACE {
 #endif
@@ -53,6 +55,11 @@ void get_fmode( char* fmode, int open_mode) {
 }
 
 gzstreambuf* gzstreambuf::open( const char* name, int open_mode) {
+    filename = std::string(name);
+    // const size_t n = strlen(name);  // excludes null terminator
+    // filename = new char[n + 1]{}; // {} zero initializes array
+    // std::copy_n(name, n, filename);
+    
     if ( is_open())
         return (gzstreambuf*)0;
     mode = open_mode;
@@ -61,12 +68,12 @@ gzstreambuf* gzstreambuf::open( const char* name, int open_mode) {
         || ((mode & std::ios::in) && (mode & std::ios::out)))
         return (gzstreambuf*)0;
     get_fmode(fmode, mode);
-    handle = fopen(name, fmode);
+    handle = fopen(filename.c_str(), fmode);
     if (!handle) {
         return 0;
     }
     
-    file = gzdopen(dup(fileno(handle)), fmode);
+    file = gzdopen(fileno(handle), fmode);
     if (file == 0)
         return (gzstreambuf*)0;
     opened = 1;
@@ -92,13 +99,18 @@ void gzstreambuf::seek(bcf::Offsets offset) {
           buffer + 4,  // read position
           buffer + 4); // end position
     
-    // seek using the file descriptor to an offset in the compressed file
+    // close old gzfile object and associated file handle
+    fclose(handle);
+    gzclose(file);
+
+    // open new file handle, and seek to an offset in the compressed file
+    handle = fopen(filename.c_str(), fmode);
     fseek(handle, offset.c_offset, SEEK_SET);
     ftell(handle);
-
-    // open a new gzfile object using the file descriptor (at new offset);
-    file = gzdopen(dup(fileno(handle)), fmode);
     
+    // open new gzfile object using the file descriptor (at new offset);
+    file = gzdopen(fileno(handle), fmode);
+
     if (file == 0) {
         throw std::invalid_argument("cannot seek within this gzfile");
     }

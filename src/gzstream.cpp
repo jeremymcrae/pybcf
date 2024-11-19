@@ -30,7 +30,6 @@
 #include <iostream>
 #include <string.h>  // for memcpy
 #include <stdexcept>
-#include <unistd.h>
 
 #include <iostream>
 

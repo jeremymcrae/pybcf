@@ -47,7 +47,7 @@ def build_zlib():
     cmd = ['cmake', '-S', source_dir, '-B', build_dir,
         '-DZLIB_COMPAT=ON',
         '-DZLIB_ENABLE_TESTS=OFF',
-        f'-DCMAKE_C_FLAGS="-fPIC"',
+        '-DBUILD_SHARED_LIBS=OFF',
     ]
     subprocess.run(cmd)
     subprocess.run(['cmake', '--build', build_dir, '-v', '--config', 'Release'])

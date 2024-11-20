@@ -50,7 +50,7 @@ def build_zlib():
         f'-DCMAKE_C_FLAGS="-fPIC"',
     ]
     subprocess.run(cmd)
-    subprocess.run(['cmake', '--build', build_dir, '--config', 'Release'])
+    subprocess.run(['cmake', '--build', build_dir, '--config', 'Release', '--trace'])
     os.chdir(cur_dir)
     
     include_dirs = [str(build_dir), str(source_dir)]

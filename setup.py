@@ -54,16 +54,15 @@ def build_zlib():
     subprocess.run(['cmake', '--build', build_dir, '-v', '--config', 'Release'])
     os.chdir(cur_dir)
     
-    include_dirs = [str(build_dir), str(source_dir)]
     objs = [str(build_dir / 'libz.a')]
     if sys.platform == 'win32':
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib'),
                 ]
-        include_dirs.append(str(build_dir / 'Release'))
+        build_dir = build_dir / 'Release'
     
-    return include_dirs, objs
+    return str(build_dir), objs
 
-include_dirs, zlib  = build_zlib()
+include_dir, zlib  = build_zlib()
 
 ext = cythonize([
     Extension('pybcf.reader',
@@ -78,7 +77,7 @@ ext = cythonize([
             'src/sample_data.cpp',
             'src/variant.cpp'],
         extra_objects=zlib,
-        include_dirs=['src'] + include_dirs,
+        include_dirs=['src', include_dir],
         language='c++'),
     ])
 

@@ -50,7 +50,7 @@ def build_zlib():
         f'-DCMAKE_C_FLAGS="-fPIC"',
     ]
     subprocess.run(cmd)
-    subprocess.run(['cmake', '--build', build_dir, '--config', 'Release', '--trace'])
+    subprocess.run(['cmake', '--trace', '--build', build_dir, '--config', 'Release'])
     os.chdir(cur_dir)
     
     include_dirs = [str(build_dir), str(source_dir)]
@@ -59,8 +59,6 @@ def build_zlib():
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib'),
                 ]
         include_dirs.append(str(build_dir / 'Release'))
-    
-    print('static lib size:', (build_dir / 'Release' / 'zlibstatic.lib').stat())
     
     return include_dirs, objs
 

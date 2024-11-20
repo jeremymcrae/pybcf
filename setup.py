@@ -58,7 +58,6 @@ def build_zlib():
     if sys.platform == 'win32':
         objs = [str(build_dir / 'Release' / 'zlibstatic.lib'),
                 ]
-        build_dir = build_dir / 'Release'
     
     return str(build_dir), objs
 

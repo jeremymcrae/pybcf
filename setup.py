@@ -44,7 +44,7 @@ def build_zlib():
     build_dir.mkdir(exist_ok=True)
     os.chdir(build_dir)
     
-    cmd = ['cmake', '-S', source_dir, '-B', build_dir,
+    cmd = ['cmake', '--trace', '-S', source_dir, '-B', build_dir,
         '-DZLIB_COMPAT=ON',
         '-DZLIB_ENABLE_TESTS=OFF',
         f'-DCMAKE_C_FLAGS="-fPIC"',

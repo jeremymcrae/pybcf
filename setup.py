@@ -19,7 +19,6 @@ elif sys.platform == "darwin":
         "-stdlib=libc++",
         "-std=c++11",
         '-O2',
-        '-march=native',
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
         "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
         ]

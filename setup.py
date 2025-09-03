@@ -13,7 +13,7 @@ from Cython.Build import cythonize
 EXTRA_LINK_ARGS = []
 EXTRA_COMPILE_ARGS = []
 if sys.platform == 'linux':
-    EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include']
+    EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include', '-O2']
 elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += [
         "-stdlib=libc++",

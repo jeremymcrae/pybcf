@@ -7,34 +7,34 @@ on:
     - cron: "33 3 3 * *"
 
 jobs:
-  # build_wheels:
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       os: ['ubuntu-latest', 'macos-latest', 'windows-latest']
-  #       python: ["cp38", "cp39", "cp310", "cp311", "cp312", "cp313"]
+  build_wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ['ubuntu-latest', 'macos-latest', 'windows-latest']
+        python: ["cp38", "cp39", "cp310", "cp311", "cp312", "cp313"]
 
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         submodules: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
       
-  #     - name: Build wheels
-  #       uses: pypa/cibuildwheel@v2.21.3
-  #       env:
-  #         CIBW_BUILD: ${{ matrix.python }}-*
-  #         CIBW_SKIP: '*i686'
-  #         CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-  #         CIBW_ARCHS: native
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_BUILD: ${{ matrix.python }}-*
+          CIBW_SKIP: '*i686'
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          CIBW_ARCHS: native
 
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         path: ./wheelhouse/*.whl
-  #         name: artifact-${{ matrix.os }}-${{ matrix.python }}
+      - uses: actions/upload-artifact@v4
+        with:
+          path: ./wheelhouse/*.whl
+          name: artifact-${{ matrix.os }}-${{ matrix.python }}
   
-  test_macos:
-    name: macosx test
-    runs-on: macos-latest
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,56 +43,37 @@ jobs:
       - uses: actions/setup-python@v5
         name: Install Python
         with:
-          python-version: '3.13'
-      
-      - name: Unit testing
+          python-version: '3.12'
+
+      - name: Build sdist
         run: |
           python -m pip install --upgrade pip
+          pip install setuptools build
+          python -m build --sdist
           pip install .[test]
           python -m unittest discover
-  
-  # build_sdist:
-  #   name: Build source distribution
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         submodules: true
 
-  #     - uses: actions/setup-python@v5
-  #       name: Install Python
-  #       with:
-  #         python-version: '3.12'
+      - uses: actions/upload-artifact@v4
+        with:
+          path: dist/*.tar.gz
+          name: artifact-source
 
-  #     - name: Build sdist
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install setuptools build
-  #         python -m build --sdist
-  #         pip install .[test]
-  #         python -m unittest discover
+  upload_pypi:
+    needs: [build_wheels, build_sdist]
+    runs-on: ubuntu-latest
+    # upload to PyPI on every tag starting with 'v'
+    if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
+    # alternatively, to publish when a GitHub Release is created, use the following rule:
+    # if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifact-*
+          merge-multiple: true
+          path: dist
 
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         path: dist/*.tar.gz
-  #         name: artifact-source
-
-  # upload_pypi:
-  #   needs: [build_wheels, build_sdist]
-  #   runs-on: ubuntu-latest
-  #   # upload to PyPI on every tag starting with 'v'
-  #   if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
-  #   # alternatively, to publish when a GitHub Release is created, use the following rule:
-  #   # if: github.event_name == 'release' && github.event.action == 'published'
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         pattern: artifact-*
-  #         merge-multiple: true
-  #         path: dist
-
-  #     - uses: pypa/gh-action-pypi-publish@release/v1
-  #       with:
-  #         user: __token__
-  #         password: ${{ secrets.pypi_password }}
-  #         # To test: repository_url: https://test.pypi.org/legacy/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.pypi_password }}
+          # To test: repository_url: https://test.pypi.org/legacy/

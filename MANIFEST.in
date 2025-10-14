@@ -10,5 +10,11 @@ include src/gzstream.h
 include src/gzstream.C
 include src/zlib-ng/*.h
 include src/zlib-ng/*.c
-recursive-include src/zlib-ng/arch/*.h
-recursive-include src/zlib-ng/arch/*.c
+include src/zlib-ng/CMakeLists.txt
+include src/zlib-ng/*.in
+include src/zlib-ng/*.cmakein
+include src/zlib-ng/*.empty
+recursive-include src/zlib-ng/cmake/ *
+recursive-include src/zlib-ng/arch/ *.c
+recursive-include src/zlib-ng/arch/ *.h
+recursive-include src/zlib-ng/arch/ *.in

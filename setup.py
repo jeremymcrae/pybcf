@@ -31,6 +31,9 @@ elif sys.platform == "win32":
 if platform.machine() == 'x86_64' and sys.platform != "darwin":
     EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']
 
+if platform.machine() == 'aarch64' and sys.platform == "linux":
+    EXTRA_COMPILE_ARGS += ['-flax-vector-conversions']
+
 def build_zlib():
     ''' compile zlib code to object files for linking
     

@@ -1,6 +1,7 @@
 
 
 #include <sstream>
+#include <stdexcept>
 #include <algorithm>
 
 #include "header.h"
@@ -28,7 +29,7 @@ static std::vector<std::string> split_line(std::string line) {
   std::vector<std::string> data;
   if (delim_pos != std::string::npos) {
     data.push_back(line.substr(0, delim_pos));
-    data.push_back(line.substr(delim_pos + 1, line.size() - delim_pos));
+    data.push_back(line.substr(delim_pos + 1));
   } else {
     data.push_back(line);
   }
@@ -39,29 +40,41 @@ static std::vector<std::string> split_line(std::string line) {
 /// @param text 
 /// @return 
 static std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
-  text = trim(text, "<>");
+  text = trim(text, "<>\r");
   std::unordered_map<std::string, std::string> data;
 
-  size_t delim;
-  std::string item, key, value;
-  std::istringstream iss(text);
-
-  while (std::getline(iss, item, ',')) {
-    delim = item.find('=');
-    key = item.substr(0, delim);
-    value = item.substr(delim + 1, item.size() - delim);
-    data[key] = trim(value, "\"");
+  bool in_quotes = false;
+  size_t start = 0;
+  for (size_t i = 0; i <= text.size(); i++) {
+    if (i < text.size() && text[i] == '"' && (i == 0 || text[i - 1] != '\\')) {
+      in_quotes = !in_quotes;
+    } else if (i == text.size() || (text[i] == ',' && !in_quotes)) {
+      std::string item = text.substr(start, i - start);
+      size_t delim = item.find('=');
+      if (delim != std::string::npos) {
+        std::string key = item.substr(0, delim);
+        std::string value = item.substr(delim + 1);
+        data[key] = trim(value, "\"");
+      }
+      start = i + 1;
+    }
   }
   return data;
 }
 
-Header::Header(std::string & text) {
+Header::Header(const std::string & text) {
   filters[idx] = {"PASS", "All filters passed"};
   
   std::istringstream lines(text);
   std::string line;
   std::unordered_map<std::string, std::string> data;
   while (std::getline(lines, line)) {
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\0')) {
+      line.pop_back();
+    }
+    if (line.size() < 2 || line[0] != '#') {
+      continue;
+    }
     if (line[1] != '#') {
       if (line.substr(0, 6).find("CHROM") != std::string::npos) {
         if (samples.size() > 0) {
@@ -71,7 +84,7 @@ Header::Header(std::string & text) {
         std::string item = "FORMAT\t";
         size_t i = line.find(item);
         if (i != std::string::npos) {
-          line = line.substr(i + item.size(), line.size());
+          line = line.substr(i + item.size());
           std::istringstream iss(line);
           while (std::getline(iss, item, '\t')) {
             samples.push_back(item);
@@ -90,27 +103,32 @@ Header::Header(std::string & text) {
         
         data = parse_delimited(remainder);
 
-        // use the IDX field for the map key, if IDX was included
-        if (has_idx_tag && data.count("IDX") == 0) {
-          throw std::invalid_argument("invalid BCF - missing IDX field in " + data["ID"]);
-        }
-        if (data.count("IDX") > 0) {
-          idx = std::stoi(data["IDX"]);
-        }
-
         if (id == "contig") {
+          if (data.count("IDX") > 0) {
+            contig_idx = static_cast<std::uint32_t>(std::stoul(data["IDX"]));
+          }
           contigs[contig_idx] = {data["ID"]};
           contig_idx += 1;
-        } else if (id == "INFO") {
-          info[idx] = {data["ID"], data["Number"], data["Type"], 
-                       data["Description"]};
-        } else if (id == "FORMAT") {
-          format[idx] = {data["ID"], data["Number"], data["Type"], 
+        } else {
+          // use the IDX field for the map key, if IDX was included
+          if (has_idx_tag && data.count("IDX") == 0) {
+            throw std::invalid_argument("invalid BCF - missing IDX field in " + data["ID"]);
+          }
+          if (data.count("IDX") > 0) {
+            idx = static_cast<std::uint32_t>(std::stoul(data["IDX"]));
+            has_idx_tag = true;
+          }
+          if (id == "INFO") {
+            info[idx] = {data["ID"], data["Number"], data["Type"], 
                          data["Description"]};
-        } else if ((id == "FILTER") && (data["ID"] != "PASS")) {
-          filters[idx] = {data["ID"], data["Description"]};
+          } else if (id == "FORMAT") {
+            format[idx] = {data["ID"], data["Number"], data["Type"], 
+                           data["Description"]};
+          } else if ((id == "FILTER") && (data["ID"] != "PASS")) {
+            filters[idx] = {data["ID"], data["Description"]};
+          }
+          idx += 1;
         }
-        idx += (id != "contig");
       }
     }
   }

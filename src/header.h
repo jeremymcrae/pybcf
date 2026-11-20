@@ -38,7 +38,7 @@ class Header {
   std::uint32_t contig_idx=0;
   bool has_idx_tag=false;
 public:
-  Header(std::string &text);
+  Header(const std::string &text);
   Header() {}
   std::unordered_map<std::uint32_t, ContigField> contigs;
   std::unordered_map<std::uint32_t, InfoField> info;

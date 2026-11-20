@@ -1,4 +1,7 @@
 
+import gzip
+import struct
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -176,6 +179,32 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual(list(vcf_pysam.header.filters), vcf_pybcf.header.filters)
         self.assertEqual(list(vcf_pysam.header.formats), vcf_pybcf.header.formats)
         self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
+
+    def test_header_quoted_commas_and_blank_lines(self):
+        ''' check header parsing handles blank lines, quoted commas/equals, and contig IDX
+        '''
+        header_text = (
+            '##fileformat=VCFv4.2\n'
+            '\n'
+            '##FILTER=<ID=PASS,Description="All filters passed">\n'
+            '##contig=<ID=chr1,length=1000>\n'
+            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, and ID=FAKE_ID">\n'
+            '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+            '\x00'
+        ).encode('utf8')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bcf_path = Path(tmpdir) / 'hdr.bcf'
+            with gzip.open(bcf_path, 'wb') as gz:
+                gz.write(b'BCF\x02\x02')
+                gz.write(struct.pack('<I', len(header_text)))
+                gz.write(header_text)
+
+            bcf = BcfReader(bcf_path)
+            self.assertEqual(bcf.header.contigs, ['chr1'])
+            self.assertEqual(bcf.header.info, ['REAL_ID'])
+            self.assertEqual(bcf.header.filters, ['PASS'])
+            self.assertEqual(list(bcf), [])
 
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields

@@ -20,14 +20,22 @@ BCF::BCF(std::string path, std::string index_path) {
   // check the file header indicates this is a bcf file
   char magic[5];
   infile.read(&magic[0], 5);
-  if (magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != 2 || magic[4] != 2) {
+  if (infile.fail() || magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != 2 || magic[4] != 2) {
     throw std::invalid_argument("doesn't look like a BCF2.2 file");
   }
   
-  std::uint32_t len;
+  std::uint32_t len = 0;
   infile.read(reinterpret_cast<char *>(&len), sizeof(len));
-  std::string text(len, ' ');
-  infile.read(reinterpret_cast<char *>(&text[0]), len);
+  if (infile.fail()) {
+    throw std::invalid_argument("truncated BCF header length");
+  }
+  std::string text(len, '\0');
+  if (len > 0) {
+    infile.read(&text[0], len);
+    if (infile.fail()) {
+      throw std::invalid_argument("truncated BCF header text");
+    }
+  }
   header = Header(text);
   
   // try opening the index file

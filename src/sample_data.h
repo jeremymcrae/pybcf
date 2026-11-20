@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "gzstream.h"
+#include "gzreader.h"
 #include "header.h"
 #include "types.h"
 
@@ -37,7 +37,7 @@ class SampleData {
   std::vector<std::int32_t> parse_16bit_ints(FormatType & type);
   std::vector<std::int32_t> parse_32bit_ints(FormatType & type);
 public:
-  SampleData(igzstream &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
+  SampleData(GzReader &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData() = default;
   std::vector<std::string> get_keys();
   FormatType get_type(std::string &key);

@@ -12,29 +12,23 @@ namespace bcf {
 /// @param path path to bcf file
 /// @param index_path path to index file (if exists)
 BCF::BCF(std::string path, std::string index_path) {
-  infile.open(path.c_str());
-  if (infile.fail()) {
+  infile.open(path);
+  if (!infile.is_open()) {
     throw std::invalid_argument("cannot open file at " + path);
   }
   
   // check the file header indicates this is a bcf file
   char magic[5];
-  infile.read(&magic[0], 5);
-  if (infile.fail() || magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != 2 || magic[4] != 2) {
+  infile.read_exact(magic, 5, "doesn't look like a BCF2.2 file");
+  if (magic[0] != 'B' || magic[1] != 'C' || magic[2] != 'F' || magic[3] != 2 || magic[4] != 2) {
     throw std::invalid_argument("doesn't look like a BCF2.2 file");
   }
   
   std::uint32_t len = 0;
-  infile.read(reinterpret_cast<char *>(&len), sizeof(len));
-  if (infile.fail()) {
-    throw std::invalid_argument("truncated BCF header length");
-  }
+  infile.read_exact(&len, sizeof(len), "truncated BCF header length");
   std::string text(len, '\0');
   if (len > 0) {
-    infile.read(&text[0], len);
-    if (infile.fail()) {
-      throw std::invalid_argument("truncated BCF header text");
-    }
+    infile.read_exact(&text[0], len, "truncated BCF header text");
   }
   header = Header(text);
   

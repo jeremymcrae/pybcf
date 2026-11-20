@@ -7,15 +7,15 @@
 namespace bcf {
 
 /// @brief start a Variant object
-/// @param infile file to read variant data from (as input gzstream)
+/// @param infile file to read variant data from
 /// @param header for interpreting contig name, info and sample fields
-Variant::Variant(igzstream & infile, Header & header) {
+Variant::Variant(GzReader & infile, Header & header) {
   std::uint32_t l_shared = 0;
-  infile.read(reinterpret_cast<char *>(&l_shared), sizeof(std::uint32_t));
-  if (infile.gcount() == 0 && infile.eof()) {
+  std::size_t n_read = infile.read(&l_shared, sizeof(std::uint32_t));
+  if (n_read == 0) {
     throw std::out_of_range("reached end of file");
   }
-  if (infile.fail()) {
+  if (n_read != sizeof(std::uint32_t)) {
     throw std::invalid_argument("truncated BCF variant header");
   }
   if (l_shared < 24 || l_shared > UINT32_MAX - 4) {
@@ -24,10 +24,7 @@ Variant::Variant(igzstream & infile, Header & header) {
 
   std::uint32_t metadata_len = l_shared + 4;
   buf.resize(metadata_len);
-  infile.read(buf.data(), metadata_len);
-  if (infile.fail()) {
-    throw std::invalid_argument("truncated BCF variant record");
-  }
+  infile.read_exact(buf.data(), metadata_len, "truncated BCF variant record");
 
   std::uint32_t sampledata_len = 0;
   std::uint32_t idx = 0;

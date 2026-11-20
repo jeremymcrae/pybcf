@@ -1,10 +1,9 @@
 
 #include <algorithm>
-#include <fstream>
 #include <stdexcept>
 #include <unordered_map>
 
-#include "gzstream.h"
+#include "gzreader.h"
 
 #include "index.h"
 
@@ -25,30 +24,30 @@ Offsets parse_virtual_offset(std::uint64_t v_offset) {
 /// @brief load file according to https://samtools.github.io/hts-specs/CSIv1.pdf
 /// @param path path to CSI index file
 IndexFile::IndexFile(std::string path) {
-  igzstream infile(path.c_str());
-  if (infile.fail()) {
+  GzReader infile(path);
+  if (!infile.is_open()) {
     throw std::invalid_argument("cannot open index file at " + path);
   }
   
   // check the file header indicates this is a CSI file
   char magic[4];
-  infile.read(&magic[0], 4);
-  if (infile.fail() || magic[0] != 'C' || magic[1] != 'S' || magic[2] != 'I' || magic[3] != 1) {
+  infile.read_exact(magic, 4, "doesn't look like a CSI file");
+  if (magic[0] != 'C' || magic[1] != 'S' || magic[2] != 'I' || magic[3] != 1) {
     throw std::invalid_argument("doesn't look like a CSI file");
   }
   
-  infile.read(reinterpret_cast<char *>(&min_shift), sizeof(min_shift));
-  infile.read(reinterpret_cast<char *>(&depth), sizeof(depth));
-  infile.read(reinterpret_cast<char *>(&l_aux), sizeof(l_aux));
-  if (infile.fail() || min_shift < 0 || depth < 0 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
+  infile.read_exact(&min_shift, sizeof(min_shift), "invalid CSI header");
+  infile.read_exact(&depth, sizeof(depth), "invalid CSI header");
+  infile.read_exact(&l_aux, sizeof(l_aux), "invalid CSI header");
+  if (min_shift < 0 || depth < 0 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
     throw std::invalid_argument("invalid CSI header");
   }
   if (l_aux > 0) {
     aux.resize(l_aux);
-    infile.read(reinterpret_cast<char *>(aux.data()), l_aux);
+    infile.read_exact(aux.data(), l_aux, "truncated CSI aux data");
   }
-  infile.read(reinterpret_cast<char *>(&n_ref), sizeof(n_ref));
-  if (infile.fail() || n_ref < 0) {
+  infile.read_exact(&n_ref, sizeof(n_ref), "invalid CSI reference count");
+  if (n_ref < 0) {
     throw std::invalid_argument("invalid CSI reference count");
   }
   
@@ -58,16 +57,13 @@ IndexFile::IndexFile(std::string path) {
   Offsets bin_offsets, chunk_begin, chunk_end;
   for (std::int32_t i=0; i < n_ref; i++) {
     std::unordered_map<std::uint32_t, Bin> bins;
-    infile.read(reinterpret_cast<char *>(&n_bins), sizeof(n_bins));
-    if (infile.fail()) {
-      throw std::invalid_argument("truncated CSI file");
-    }
+    infile.read_exact(&n_bins, sizeof(n_bins), "truncated CSI file");
     
     for (std::uint32_t j=0; j<n_bins; j++) {
-      infile.read(reinterpret_cast<char *>(&bin_idx), sizeof(bin_idx));
-      infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
-      infile.read(reinterpret_cast<char *>(&n_chunks), sizeof(n_chunks));
-      if (infile.fail() || n_chunks < 0) {
+      infile.read_exact(&bin_idx, sizeof(bin_idx), "invalid CSI bin record");
+      infile.read_exact(&v_offset, sizeof(v_offset), "invalid CSI bin record");
+      infile.read_exact(&n_chunks, sizeof(n_chunks), "invalid CSI bin record");
+      if (n_chunks < 0) {
         throw std::invalid_argument("invalid CSI bin record");
       }
 
@@ -75,13 +71,10 @@ IndexFile::IndexFile(std::string path) {
       std::vector<Chunk> chunks;
       chunks.reserve(n_chunks);
       for (std::int32_t k=0; k<n_chunks; k++) {
-        infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
+        infile.read_exact(&v_offset, sizeof(v_offset), "truncated CSI chunk record");
         chunk_begin = parse_virtual_offset(v_offset);
-        infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
+        infile.read_exact(&v_offset, sizeof(v_offset), "truncated CSI chunk record");
         chunk_end = parse_virtual_offset(v_offset);
-        if (infile.fail()) {
-          throw std::invalid_argument("truncated CSI chunk record");
-        }
         chunks.push_back({chunk_begin, chunk_end});
       }
       bins[bin_idx] = {bin_offsets, std::move(chunks)};

@@ -7,7 +7,7 @@
 #include <vector>
 #include <unordered_map>
 
-#include "gzstream.h"
+#include "gzreader.h"
 
 #include "header.h"
 #include "types.h"
@@ -26,7 +26,7 @@ class Variant {
   std::uint32_t n_fmt=0;
   std::uint32_t n_sample=0;
 public:
-  Variant(igzstream & infile, Header & header);
+  Variant(GzReader & infile, Header & header);
   Variant() {};
   
   std::string chrom="";

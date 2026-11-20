@@ -15,7 +15,7 @@
 
 namespace bcf {
 
-SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
+SampleData::SampleData(GzReader & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
   n_samples = _n_samples;
   header = &_header;
   if (len == 0) {
@@ -26,10 +26,7 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
 
   // read the sample data into a buffer, but don't parse until required
   buf.resize(len);
-  infile.read(buf.data(), len);
-  if (infile.fail()) {
-    throw std::invalid_argument("truncated BCF sample data");
-  }
+  infile.read_exact(buf.data(), len, "truncated BCF sample data");
 
   // read the available keys
   std::uint32_t buf_idx = 0;

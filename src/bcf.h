@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "gzstream.h"
+#include "gzreader.h"
 
 #include "header.h"
 #include "variant.h"
@@ -14,7 +14,7 @@
 namespace bcf {
 
 class BCF {
-  igzstream infile;
+  GzReader infile;
   IndexFile idxfile;
   std::string query_chrom="";
   std::int32_t query_start=0;

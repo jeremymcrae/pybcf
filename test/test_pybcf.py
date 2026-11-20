@@ -420,6 +420,22 @@ class TestBcfReader(unittest.TestCase):
             for field in ('IS', 'IV', 'FS', 'FV'):
                 self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
 
+    def test_corrupt_or_missing_bcf_raises_value_error(self):
+        ''' check GzReader raises ValueError on missing or truncated/corrupt BCF streams
+        '''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = Path(tmpdir) / 'does_not_exist.bcf'
+            with self.assertRaises(ValueError):
+                BcfReader(missing_path)
+
+            src_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
+            raw = src_bcf.read_bytes()
+            truncated_path = Path(tmpdir) / 'truncated.bcf'
+            # Truncate mid-file so header succeeds and variant/gzip reading detects corruption
+            truncated_path.write_bytes(raw[:len(raw) // 2])
+            with self.assertRaises(ValueError):
+                list(BcfReader(truncated_path))
+
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields
     '''

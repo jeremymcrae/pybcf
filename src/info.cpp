@@ -59,8 +59,10 @@ void Info::parse() {
     }
 
     InfoKind kind;
-    if (type_val.n_vals == 0) {
-      kind = field.is_flag ? info_flag : (field.is_list ? info_vector_int : info_missing);
+    if (field.is_flag) {
+      kind = info_flag;
+    } else if (type_val.n_vals == 0) {
+      kind = field.is_list ? info_vector_int : info_missing;
     } else if (type_val.type == char_) {
       kind = field.is_list ? info_vector_string : info_string;
     } else if (type_val.type == float_) {

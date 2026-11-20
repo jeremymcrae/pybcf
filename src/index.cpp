@@ -52,7 +52,7 @@ bool IndexFile::open(const std::string & path, bool required) {
   infile.read_exact(&min_shift, sizeof(min_shift), "invalid CSI header");
   infile.read_exact(&depth, sizeof(depth), "invalid CSI header");
   infile.read_exact(&l_aux, sizeof(l_aux), "invalid CSI header");
-  if (min_shift < 0 || depth < 0 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
+  if (min_shift < 0 || min_shift > 60 || depth < 0 || depth > 19 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
     throw std::invalid_argument("invalid CSI header");
   }
   if (l_aux > 0) {
@@ -67,7 +67,7 @@ bool IndexFile::open(const std::string & path, bool required) {
   }
 
   std::uint64_t bin_limit = static_cast<std::uint64_t>(first_bin_at_level(depth + 1));
-  indices.reserve(n_ref);
+  indices.reserve(std::min<std::int32_t>(n_ref, 4096));
 
   for (std::int32_t i = 0; i < n_ref; i++) {
     std::unordered_map<std::uint32_t, Bin> bins;

@@ -71,6 +71,9 @@ bool Variant::read(GzReader & infile, const Header & header) {
 
   std::uint32_t n_sample = hdr.n_fmt_sample & 0xffffff;
   std::uint32_t n_fmt = hdr.n_fmt_sample >> 24;
+  if ((n_fmt > 0 || hdr.l_indiv > 0) && n_sample != header.samples.size()) {
+    throw std::invalid_argument("BCF record sample count does not match header");
+  }
 
   std::uint32_t idx = 0;
   varid = parse_typed_string(buf.data(), buf.size(), idx);

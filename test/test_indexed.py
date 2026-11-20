@@ -229,6 +229,12 @@ class TestIndexed(unittest.TestCase):
             with self.assertRaises(ValueError):
                 BcfReader(tmp_bcf)
 
+            for min_shift, depth in ((14, 0x40000000), (0, 20)):
+                with gzip.open(tmp_csi, 'wb') as gz:
+                    gz.write(b'CSI\x01' + struct.pack('<iiii', min_shift, depth, 0, 0))
+                with self.assertRaises(ValueError):
+                    BcfReader(tmp_bcf)
+
     def test_fetch_empty_chrom_on_fresh_reader(self):
         ''' check fetching an empty contig works without prior iteration
         '''

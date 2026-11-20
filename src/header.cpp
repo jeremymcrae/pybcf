@@ -40,7 +40,7 @@ static std::uint32_t parse_idx(const std::string & s) {
 
 /// @brief parse the comma-separated fields of an info/format/contig line
 static std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
-  text = trim(text, "<>\r");
+  text = trim(trim(text, " \t\r"), "<>");
   std::unordered_map<std::string, std::string> data;
 
   bool in_quotes = false;
@@ -87,7 +87,8 @@ static std::vector<std::string> sorted_ids(const std::unordered_map<std::uint32_
 Header::Header(const std::string & text) {
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
-  bool has_idx_tag = false;
+  bool seen_idx = false;
+  bool seen_no_idx = false;
   bool seen_chrom = false;
   bool seen_pass = false;
 
@@ -144,15 +145,19 @@ Header::Header(const std::string & text) {
       contig_ids[id] = contig_idx;
       contig_idx += 1;
     } else {
-      if (has_idx_tag && idx_it == data.end()) {
-        throw std::invalid_argument("invalid BCF - missing IDX field in " + id);
-      }
-      if (idx_it != data.end()) {
-        idx = parse_idx(idx_it->second);
-        has_idx_tag = true;
-      } else if (kind == "FILTER" && id == "PASS") {
+      if (idx_it == data.end() && kind == "FILTER" && id == "PASS") {
         // PASS is implicitly at index 0 when IDX tags are absent.
         continue;
+      }
+      bool has_idx = idx_it != data.end();
+      if ((seen_idx && !has_idx) || (seen_no_idx && has_idx)) {
+        throw std::invalid_argument("invalid BCF - inconsistent IDX fields in " + id);
+      }
+      if (has_idx) {
+        idx = parse_idx(idx_it->second);
+        seen_idx = true;
+      } else {
+        seen_no_idx = true;
       }
 
       if (kind == "INFO") {

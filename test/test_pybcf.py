@@ -192,7 +192,7 @@ class TestBcfReader(unittest.TestCase):
             '##FILTER=<ID=LowQual,Description="Low quality",IDX=1>\n'
             '##FILTER=<ID=PASS,Description="All filters passed",IDX=5>\n'
             '##contig=<ID=chr1,length=1000>\n'
-            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, ID=FAKE_ID, and slash \\\\",IDX=2>\n'
+            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, ID=FAKE_ID, and slash \\\\",IDX=2>  \t\n'
             '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
             '\x00'
         ).encode('utf8')
@@ -218,6 +218,8 @@ class TestBcfReader(unittest.TestCase):
                 '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=-1>\n#CHROM\tPOS\n\x00',
                 '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=99999999999999999999>\n#CHROM\tPOS\n\x00',
                 '##fileformat=VCFv4.2\n##INFO=<Number=1,Type=Integer>\n#CHROM\tPOS\n\x00',
+                '##fileformat=VCFv4.2\n##INFO=<ID=A,Number=1,Type=Integer>\n##INFO=<ID=B,Number=1,Type=Integer,IDX=1>\n#CHROM\tPOS\n\x00',
+                '##fileformat=VCFv4.2\n##INFO=<ID=A,Number=1,Type=Integer,IDX=1>\n##INFO=<ID=B,Number=1,Type=Integer>\n#CHROM\tPOS\n\x00',
             ):
                 bad_path = Path(tmpdir) / 'bad_hdr.bcf'
                 write_header_bcf(bad_path, bad_hdr.encode('utf8'))
@@ -484,10 +486,12 @@ class TestBcfReader(unittest.TestCase):
                 '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="dp",IDX=10>\n'
                 '##FORMAT=<ID=FF,Number=1,Type=Float,Description="ff",IDX=11>\n'
                 '##FORMAT=<ID=FT,Number=1,Type=String,Description="ft",IDX=12>\n'
+                '##INFO=<ID=FLG_V21,Number=0,Type=Flag,Description="fv21",IDX=13>\n'
                 '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\tS2\n\x00'
             ).encode('utf8')
             info_payload = (
                 b'\x11\x01\x00'  # FLG (flag, n_vals=0) -> True
+                b'\x11\x0d\x11\x01'  # FLG_V21 (BCFv2.1 int8=1 flag) -> True
                 b'\x11\x02\x01'  # IS (int8, n_vals=0) -> None
                 b'\x11\x03\x01'  # IV (int8, n_vals=0) -> ()
                 b'\x11\x04\x05'  # FS (float, n_vals=0) -> None
@@ -503,7 +507,7 @@ class TestBcfReader(unittest.TestCase):
                 b'\x11\x0c\x07'  # FT (char, n_vals=0 across 2 samples) -> [('',), ('',)]
             )
             shared = (
-                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 9, (3 << 24) | 2)
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 10, (3 << 24) | 2)
                 + b'\x07\x17A\x00'
                 + info_payload
             )
@@ -615,6 +619,9 @@ class TestBcfReader(unittest.TestCase):
                 # GT encoded as char_ instead of integer
                 (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, (1 << 24) | 1) + b'\x07\x17A\x00',
                  b'\x11\x01\x17A', True),
+                # n_sample (5) does not match header sample count (1)
+                (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, (1 << 24) | 5) + b'\x07\x17A\x00',
+                 b'\x11\x01\x01', False),
             ):
                 bad_rec_bcf = Path(tmpdir) / 'bad_rec.bcf'
                 with gzip.open(bad_rec_bcf, 'wb') as gz:

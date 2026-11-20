@@ -116,7 +116,6 @@ cdef inline tuple _decode_string_vec(const vector[string] & vec):
 cdef class BcfHeader:
     cdef Header * thisptr
     cdef BcfReader _reader
-    cdef list _samples, _contigs, _info, _filters, _formats
 
     def __init__(self, *args, **kwargs):
         raise TypeError('cannot instantiate BcfHeader directly')
@@ -131,10 +130,10 @@ cdef class BcfHeader:
         ''' list of sample IDs in the BCF
         '''
         cdef size_t i, n
-        if self._samples is None:
+        if self._reader._samples is None:
             n = self.thisptr.samples.size()
-            self._samples = [self.thisptr.samples[i].decode('utf8') for i in range(n)]
-        return self._samples
+            self._reader._samples = [self.thisptr.samples[i].decode('utf8') for i in range(n)]
+        return self._reader._samples
 
     @property
     def contigs(self):
@@ -142,11 +141,11 @@ cdef class BcfHeader:
         '''
         cdef vector[string] vals
         cdef size_t i, n
-        if self._contigs is None:
+        if self._reader._contigs is None:
             vals = self.thisptr.get_contigs()
             n = vals.size()
-            self._contigs = [vals[i].decode('utf8') for i in range(n)]
-        return self._contigs
+            self._reader._contigs = [vals[i].decode('utf8') for i in range(n)]
+        return self._reader._contigs
 
     @property
     def filters(self):
@@ -154,11 +153,11 @@ cdef class BcfHeader:
         '''
         cdef vector[string] vals
         cdef size_t i, n
-        if self._filters is None:
+        if self._reader._filters is None:
             vals = self.thisptr.get_filters()
             n = vals.size()
-            self._filters = [vals[i].decode('utf8') for i in range(n)]
-        return self._filters
+            self._reader._filters = [vals[i].decode('utf8') for i in range(n)]
+        return self._reader._filters
 
     @property
     def formats(self):
@@ -166,11 +165,11 @@ cdef class BcfHeader:
         '''
         cdef vector[string] vals
         cdef size_t i, n
-        if self._formats is None:
+        if self._reader._formats is None:
             vals = self.thisptr.get_formats()
             n = vals.size()
-            self._formats = [vals[i].decode('utf8') for i in range(n)]
-        return self._formats
+            self._reader._formats = [vals[i].decode('utf8') for i in range(n)]
+        return self._reader._formats
 
     @property
     def info(self):
@@ -178,11 +177,11 @@ cdef class BcfHeader:
         '''
         cdef vector[string] vals
         cdef size_t i, n
-        if self._info is None:
+        if self._reader._info is None:
             vals = self.thisptr.get_info()
             n = vals.size()
-            self._info = [vals[i].decode('utf8') for i in range(n)]
-        return self._info
+            self._reader._info = [vals[i].decode('utf8') for i in range(n)]
+        return self._reader._info
 
 cdef class BcfInfo:
     cdef Info * thisptr
@@ -416,8 +415,6 @@ cdef class BcfSampleData:
 cdef class BcfVariant:
     cdef Variant thisptr
     cdef BcfReader _reader
-    cdef BcfInfo _info
-    cdef BcfSampleData _samples
     def __cinit__(self, BcfReader bcf):
         self._reader = bcf
 
@@ -491,19 +488,17 @@ cdef class BcfVariant:
     def info(self):
         ''' variant info data
         '''
-        if self._info is None:
-            self._info = BcfInfo.__new__(BcfInfo)
-            self._info.set_data(&self.thisptr.info, self)
-        return self._info
+        cdef BcfInfo info = BcfInfo.__new__(BcfInfo)
+        info.set_data(&self.thisptr.info, self)
+        return info
 
     @property
     def samples(self):
         ''' variant sample data
         '''
-        if self._samples is None:
-            self._samples = BcfSampleData.__new__(BcfSampleData)
-            self._samples.set_data(&self.thisptr.sample_data, self)
-        return self._samples
+        cdef BcfSampleData samples = BcfSampleData.__new__(BcfSampleData)
+        samples.set_data(&self.thisptr.sample_data, self)
+        return samples
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within
@@ -511,7 +506,7 @@ cdef class BcfReader:
     cdef BCF * thisptr
     cdef string path
     cdef bool is_open
-    cdef BcfHeader _header
+    cdef list _samples, _contigs, _info, _filters, _formats
     cdef tuple _contig_lookup
     cdef tuple _filter_lookup
     cdef tuple _info_lookup
@@ -583,10 +578,9 @@ cdef class BcfReader:
     def header(self):
         ''' header info from bcf file
         '''
-        if self._header is None:
-            self._header = BcfHeader.__new__(BcfHeader)
-            self._header.set_data(&self.thisptr.header, self)
-        return self._header
+        cdef BcfHeader hdr = BcfHeader.__new__(BcfHeader)
+        hdr.set_data(&self.thisptr.header, self)
+        return hdr
 
     @property
     def samples(self):

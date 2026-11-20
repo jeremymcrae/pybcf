@@ -26,18 +26,18 @@ struct Bin {
 };
 
 class IndexFile {
-  std::int32_t min_shift;
-  std::int32_t depth;
-  std::int32_t l_aux;
+  std::int32_t min_shift = 0;
+  std::int32_t depth = 0;
+  std::int32_t l_aux = 0;
   std::vector<std::int8_t> aux;
-  std::int32_t n_ref;
+  std::int32_t n_ref = 0;
   std::vector<std::unordered_map<std::uint32_t, Bin>> indices;
 public:
   IndexFile(std::string path);
   IndexFile() {};
   std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end);
   std::uint32_t get_bin_depth(std::uint32_t bin_idx);
-  std::uint32_t get_bin_offset(std::uint32_t bin_idx);
+  std::uint64_t get_bin_offset(std::uint32_t bin_idx);
   Offsets query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end);
   bool has_index = false;
 };

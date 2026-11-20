@@ -30,18 +30,27 @@ IndexFile::IndexFile(std::string path) {
     throw std::invalid_argument("cannot open index file at " + path);
   }
   
-  // check the file header indicates this is a bcf file
+  // check the file header indicates this is a CSI file
   char magic[4];
   infile.read(&magic[0], 4);
-  if (magic[0] != 'C' || magic[1] != 'S' || magic[2] != 'I' || magic[3] != 1) {
+  if (infile.fail() || magic[0] != 'C' || magic[1] != 'S' || magic[2] != 'I' || magic[3] != 1) {
     throw std::invalid_argument("doesn't look like a CSI file");
   }
   
   infile.read(reinterpret_cast<char *>(&min_shift), sizeof(min_shift));
   infile.read(reinterpret_cast<char *>(&depth), sizeof(depth));
   infile.read(reinterpret_cast<char *>(&l_aux), sizeof(l_aux));
-  infile.read(reinterpret_cast<char *>(&aux[0]), l_aux);
+  if (infile.fail() || min_shift < 0 || depth < 0 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
+    throw std::invalid_argument("invalid CSI header");
+  }
+  if (l_aux > 0) {
+    aux.resize(l_aux);
+    infile.read(reinterpret_cast<char *>(aux.data()), l_aux);
+  }
   infile.read(reinterpret_cast<char *>(&n_ref), sizeof(n_ref));
+  if (infile.fail() || n_ref < 0) {
+    throw std::invalid_argument("invalid CSI reference count");
+  }
   
   std::uint32_t n_bins, bin_idx;
   std::uint64_t v_offset;
@@ -50,24 +59,34 @@ IndexFile::IndexFile(std::string path) {
   for (std::int32_t i=0; i < n_ref; i++) {
     std::unordered_map<std::uint32_t, Bin> bins;
     infile.read(reinterpret_cast<char *>(&n_bins), sizeof(n_bins));
+    if (infile.fail()) {
+      throw std::invalid_argument("truncated CSI file");
+    }
     
     for (std::uint32_t j=0; j<n_bins; j++) {
       infile.read(reinterpret_cast<char *>(&bin_idx), sizeof(bin_idx));
       infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
       infile.read(reinterpret_cast<char *>(&n_chunks), sizeof(n_chunks));
+      if (infile.fail() || n_chunks < 0) {
+        throw std::invalid_argument("invalid CSI bin record");
+      }
 
       bin_offsets = parse_virtual_offset(v_offset);
       std::vector<Chunk> chunks;
+      chunks.reserve(n_chunks);
       for (std::int32_t k=0; k<n_chunks; k++) {
         infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
         chunk_begin = parse_virtual_offset(v_offset);
         infile.read(reinterpret_cast<char *>(&v_offset), sizeof(v_offset));
         chunk_end = parse_virtual_offset(v_offset);
+        if (infile.fail()) {
+          throw std::invalid_argument("truncated CSI chunk record");
+        }
         chunks.push_back({chunk_begin, chunk_end});
       }
-      bins[bin_idx] = {bin_offsets, chunks};
+      bins[bin_idx] = {bin_offsets, std::move(chunks)};
     }
-    indices.push_back(bins);
+    indices.push_back(std::move(bins));
   }
   has_index = true;
 }
@@ -79,16 +98,28 @@ IndexFile::IndexFile(std::string path) {
 ///
 /// @param beg start position of region
 /// @param end end position of region
-/// @return currently integer, but this should be an iterator instead
+/// @return vector of candidate bin indices
 std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) {
   std::vector<std::uint32_t> bins;
-  int l, t, n, s = min_shift + depth * 3;
-  for (--end, l = n = t = 0; l <= depth; s -= 3, t += 1 << l * 3, ++l) {
-    int b = t + (beg >> s), e = t + (end >> s), i;
-    for (i = b; i <= e; ++i) {
-      // I should use the vector of bins for a contig (chromosome).
-      // Maybe an iterator of bins/chunks for the relevant region?
-      bins.push_back(i);
+  std::int64_t max_coord = 1LL << (min_shift + depth * 3);
+  if (beg >= max_coord) {
+    return bins;
+  }
+  if (beg < 0) {
+    beg = 0;
+  }
+  if (end <= beg) {
+    end = beg + 1;
+  }
+  if (end > max_coord) {
+    end = max_coord;
+  }
+  std::int32_t l, s = min_shift + depth * 3;
+  std::int64_t t;
+  for (--end, l = 0, t = 0; l <= depth; s -= 3, t += 1LL << (l * 3), ++l) {
+    std::int64_t b = t + (beg >> s), e = t + (end >> s);
+    for (std::int64_t i = b; i <= e; ++i) {
+      bins.push_back(static_cast<std::uint32_t>(i));
     }
   }
   return bins;
@@ -102,14 +133,14 @@ std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int6
 /// @param bin_idx bin index
 /// @return depth of the bin
 std::uint32_t IndexFile::get_bin_depth(std::uint32_t bin_idx) {
-  std::uint32_t factor = 8;
-  std::uint32_t start = 0;
-  std::uint32_t end = 0;
+  std::uint64_t factor = 8;
+  std::uint64_t start = 0;
+  std::uint64_t end = 0;
 
-  std::uint32_t bin_depth = depth;
+  std::int32_t bin_depth = depth;
   while (bin_depth >= 0) {
     if ((bin_idx >= start) && (bin_idx <= end)) {
-      return bin_depth;
+      return static_cast<std::uint32_t>(bin_depth);
     }
     bin_depth -= 1;
     start = end + 1;
@@ -122,12 +153,12 @@ std::uint32_t IndexFile::get_bin_depth(std::uint32_t bin_idx) {
 /// @brief find the offset of a the bin relative to the first at the same depth
 /// @param bin_idx bin index
 /// @return 
-std::uint32_t IndexFile::get_bin_offset(std::uint32_t bin_idx) {
-  std::uint32_t factor = 8;
-  std::uint32_t start = 0;
-  std::uint32_t end = 0;
+std::uint64_t IndexFile::get_bin_offset(std::uint32_t bin_idx) {
+  std::uint64_t factor = 8;
+  std::uint64_t start = 0;
+  std::uint64_t end = 0;
 
-  std::uint32_t bin_depth = depth;
+  std::int32_t bin_depth = depth;
   while (bin_depth >= 0) {
     if ((bin_idx >= start) && (bin_idx <= end)) {
       return bin_idx - start;
@@ -143,8 +174,8 @@ std::uint32_t IndexFile::get_bin_offset(std::uint32_t bin_idx) {
 /// @brief find the actual width of a bin
 /// @param depth index depth for a bin
 /// @param min_shift minimum bit shift (typically 14)
-std::uint32_t get_width(std::int32_t depth, std::int32_t min_shift) {
-  return 1 << (min_shift + (depth * 3));
+std::int64_t get_width(std::int32_t depth, std::int32_t min_shift) {
+  return 1LL << (min_shift + (depth * 3));
 }
 
 /// @brief find the file offsets for the first bin to overlap a given chrom region
@@ -156,6 +187,9 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
   if (end < beg) {
     throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
   }
+  if (contig_id >= indices.size()) {
+    throw std::out_of_range("contig ID out of range in CSI index: " + std::to_string(contig_id));
+  }
   
   // find the bins which could overlap a position
   auto bins = region_to_bins(beg, end);
@@ -163,11 +197,12 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
   // cull bins which do not exist in the indexfile, and find the bin with the
   // closest start to the position, preferrably immediately upstream of the begin
   // position, but allow using the first downstream, if upstream bins do not exist
-  std::uint32_t bin_depth, bin_width, bin_start, delta;
-  std::uint32_t left_delta = 1 << (min_shift + 3 * depth);
-  std::uint32_t right_delta = 1 << (min_shift + 3 * depth);
-  std::int32_t left_bin = -1;
-  std::int32_t right_bin = -1;
+  std::uint32_t bin_depth;
+  std::int64_t bin_width, bin_start, delta;
+  std::int64_t left_delta = 1LL << (min_shift + 3 * depth);
+  std::int64_t right_delta = 1LL << (min_shift + 3 * depth);
+  std::int64_t left_bin = -1;
+  std::int64_t right_bin = -1;
   for (auto & bin_idx: bins) {
     if (indices[contig_id].count(bin_idx) == 0) {
       continue;
@@ -175,7 +210,7 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
     
     bin_depth = get_bin_depth(bin_idx);
     bin_width = get_width(bin_depth, min_shift);
-    bin_start = get_bin_offset(bin_idx) * bin_width;
+    bin_start = static_cast<std::int64_t>(get_bin_offset(bin_idx)) * bin_width;
     delta = std::abs(bin_start - beg);
     
     // find the bin that starts closest to the begin position
@@ -197,9 +232,9 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
   }
   
   if (left_bin >= 0) {
-    return indices[contig_id][left_bin].offset;
+    return indices[contig_id][static_cast<std::uint32_t>(left_bin)].offset;
   } else {
-    return indices[contig_id][right_bin].offset;
+    return indices[contig_id][static_cast<std::uint32_t>(right_bin)].offset;
   }
 }
 

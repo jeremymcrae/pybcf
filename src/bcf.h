@@ -19,6 +19,7 @@ class BCF {
   std::string query_chrom="";
   std::int32_t query_start=0;
   std::int32_t query_end=1 << 30;
+  bool empty_region=false;
 public:
   BCF(std::string path, std::string index_path="");
   Variant nextvar();

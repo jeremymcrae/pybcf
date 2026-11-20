@@ -42,6 +42,9 @@ BCF::BCF(std::string path, std::string index_path) {
 
 // extract the next variant from the BCF
 Variant BCF::nextvar() {
+  if (empty_region) {
+    throw std::out_of_range("no variants in queried region");
+  }
   Variant var = Variant(infile, header);
   if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
     throw std::out_of_range("variant not on required chrom");
@@ -67,15 +70,22 @@ void BCF::set_region(std::string chrom, std::int32_t start, std::int32_t end) {
   if (!idxfile.has_index) {
     throw std::invalid_argument("cannot fetch without an index file");
   }
+  if (end < start) {
+    throw std::invalid_argument("start is after end: " + std::to_string(start) + " > " + std::to_string(end));
+  }
   
   std::uint32_t contig_id = header.get_contig_id(chrom);
-  
-  Offsets offset = idxfile.query(contig_id, start, end);
-  infile.seek(offset);
   
   query_chrom = chrom;
   query_start = start;
   query_end = end;
+  empty_region = false;
+  try {
+    Offsets offset = idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end);
+    infile.seek(offset);
+  } catch (const std::out_of_range &) {
+    empty_region = true;
+  }
 }
 
 }

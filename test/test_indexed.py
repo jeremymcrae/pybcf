@@ -1,4 +1,8 @@
 
+import gzip
+import shutil
+import struct
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -209,4 +213,53 @@ class TestIndexed(unittest.TestCase):
             with self.assertRaises(ValueError):
                 bcf.fetch(chrom)
         finally:
-            temp_path.rename(index_path) 
+            temp_path.rename(index_path)
+
+    def test_fetch_empty_chrom_on_fresh_reader(self):
+        ''' check fetching an empty contig works without prior iteration
+        '''
+        bcf = BcfReader(self.test_cases)
+        self.assertEqual(list(bcf.fetch('chr3')), [])
+
+    def test_csi_with_aux_data_and_fewer_contigs(self):
+        ''' check CSI files with non-zero l_aux or fewer contigs than header work safely
+        '''
+        orig_csi = self.test_cases.with_suffix('.bcf.csi')
+        raw = gzip.open(orig_csi, 'rb').read()
+        magic = raw[:4]
+        min_shift, depth, l_aux = struct.unpack('<iii', raw[4:16])
+        self.assertEqual(l_aux, 0)
+        rest = raw[16:]
+        n_ref = struct.unpack('<i', rest[:4])[0]
+
+        aux_bytes = b'AUX_METADATA_16B'
+        # Rebuild CSI with l_aux = 16 and n_ref = 1 (fewer contigs than BCF header)
+        # Keep only the first reference's bin table from rest[4:]
+        pos = 4
+        n_bins = struct.unpack('<I', rest[pos:pos + 4])[0]
+        pos += 4
+        for _ in range(n_bins):
+            _, _, n_chunks = struct.unpack('<IQI', rest[pos:pos + 16])
+            pos += 16 + n_chunks * 16
+        first_contig_bytes = rest[4:pos]
+
+        modified_raw = (
+            magic
+            + struct.pack('<iii', min_shift, depth, len(aux_bytes))
+            + aux_bytes
+            + struct.pack('<i', 1)
+            + first_contig_bytes
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_bcf = Path(tmpdir) / 'test.bcf'
+            tmp_csi = Path(tmpdir) / 'test.bcf.csi'
+            shutil.copy(self.test_cases, tmp_bcf)
+            with gzip.open(tmp_csi, 'wb') as gz:
+                gz.write(modified_raw)
+
+            bcf = BcfReader(tmp_bcf)
+            self.assertEqual(len(list(bcf.fetch('chr1', 1, 3))), 3)
+            # chr3 has contig_id >= indices.size() in this truncated CSI
+            self.assertEqual(list(bcf.fetch('chr3')), [])
+

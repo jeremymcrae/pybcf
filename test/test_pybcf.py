@@ -1,5 +1,7 @@
 
+import gc
 import gzip
+import os
 import struct
 import tempfile
 import unittest
@@ -349,6 +351,74 @@ class TestBcfReader(unittest.TestCase):
                                 self.assertAlmostEqual(float(arr[idx, j]), float(expected), places=5)
                         for j in range(len(vals), arr.shape[1]):
                             self.assertTrue(np.isnan(arr[idx, j]))
+
+    def test_lifetimes_context_manager_and_sites_only_samples(self):
+        ''' check Cython wrapper lifetimes, context-manager close, FD cleanup, and 0-sample phased
+        '''
+        sample_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
+        sites_bcf = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
+
+        # Chained temporaries must keep parent C++ objects alive
+        contigs = BcfReader(sample_bcf).header.contigs
+        self.assertGreater(len(contigs), 0)
+        info_keys = list(next(BcfReader(sample_bcf)).info)
+        self.assertGreater(len(info_keys), 0)
+        gt = next(BcfReader(sample_bcf)).samples['GT']
+        self.assertEqual(gt.ndim, 2)
+
+        # Variants and header remain usable after exiting `with`, while further reads fail cleanly
+        with BcfReader(sample_bcf) as bcf:
+            var = next(bcf)
+        self.assertGreater(len(list(var.info)), 0)
+        for k in var.info:
+            _ = var.info[k]
+        self.assertEqual(var.samples['GT'].shape, gt.shape)
+        self.assertEqual(bcf.header.contigs, contigs)
+        with self.assertRaises(ValueError):
+            next(bcf)
+
+        # Sites-only BCF has 0 samples; phased should return an empty bool array
+        sites_var = next(BcfReader(sites_bcf))
+        self.assertEqual(sites_var.samples.phased.dtype, np.bool_)
+        self.assertEqual(len(sites_var.samples.phased), 0)
+
+        # Creating and discarding BcfReader instances must not leak file descriptors
+        if Path('/proc/self/fd').exists():
+            gc.collect()
+            before = len(os.listdir('/proc/self/fd'))
+            for _ in range(25):
+                r = BcfReader(sample_bcf)
+                list(next(r).info)
+                del r
+            gc.collect()
+            after = len(os.listdir('/proc/self/fd'))
+            self.assertEqual(before, after)
+
+    def test_missing_info_ints_and_floats(self):
+        ''' check missing scalar/vector INFO ints and floats return None like pysam
+        '''
+        vcf_txt = (
+            '##fileformat=VCFv4.2\n'
+            '##contig=<ID=chr1,length=1000>\n'
+            '##INFO=<ID=IS,Number=1,Type=Integer,Description="scalar int">\n'
+            '##INFO=<ID=IV,Number=.,Type=Integer,Description="vec int">\n'
+            '##INFO=<ID=FS,Number=1,Type=Float,Description="scalar float">\n'
+            '##INFO=<ID=FV,Number=.,Type=Float,Description="vec float">\n'
+            '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+            'chr1\t10\t.\tA\tG\t.\t.\tIS=.;IV=1,.,3;FS=.;FV=1.5,.,2.5\n'
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vcf_path = Path(tmpdir) / 'missing_info.vcf'
+            bcf_path = Path(tmpdir) / 'missing_info.bcf'
+            vcf_path.write_text(vcf_txt)
+            with VariantFile(vcf_path) as vin, VariantFile(bcf_path, 'wb', header=vin.header) as vout:
+                for rec in vin:
+                    vout.write(rec)
+
+            var_pysam = next(VariantFile(bcf_path))
+            var_pybcf = next(BcfReader(bcf_path))
+            for field in ('IS', 'IV', 'FS', 'FV'):
+                self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
 
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields

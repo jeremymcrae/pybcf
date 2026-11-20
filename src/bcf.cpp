@@ -96,4 +96,8 @@ void BCF::set_region(std::string chrom, std::int32_t start, std::int32_t end) {
   }
 }
 
+void BCF::close() {
+  infile.close();
+}
+
 }

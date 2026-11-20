@@ -68,6 +68,7 @@ extensions = [
             'src/info.cpp',
             'src/sample_data.cpp',
             'src/variant.cpp'],
+        depends=[p.relative_to(ROOT).as_posix() for p in sorted((ROOT / 'src').glob('*.h'))],
         include_dirs=['src'],
         language='c++'),
     ]

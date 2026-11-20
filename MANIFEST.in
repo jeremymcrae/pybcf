@@ -1,9 +1,10 @@
 # pybcf code
 include MANIFEST.in
 include pyproject.toml
-include src/pybcf/*.cpp
 include src/pybcf/*.py
 include src/pybcf/*.pyx
+# cython generates these while building, so a copy here could be stale
+exclude src/pybcf/*.cpp
 include src/*.h
 include src/*.cpp
 include src/zlib-ng/*.h
@@ -12,7 +13,10 @@ include src/zlib-ng/CMakeLists.txt
 include src/zlib-ng/*.in
 include src/zlib-ng/*.cmakein
 include src/zlib-ng/*.empty
+exclude src/zlib-ng/zlib.h src/zlib-ng/zconf.h src/zlib-ng/zlib-ng.h src/zlib-ng/zconf-ng.h
+exclude src/zlib-ng/zlib_name_mangling.h src/zlib-ng/zlib_name_mangling-ng.h
 recursive-include src/zlib-ng/cmake/ *
 recursive-include src/zlib-ng/arch/ *.c
 recursive-include src/zlib-ng/arch/ *.h
 recursive-include src/zlib-ng/arch/ *.in
+prune test

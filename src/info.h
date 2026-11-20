@@ -11,8 +11,17 @@
 
 namespace bcf {
 
+enum InfoKind : std::int8_t {
+  info_flag = -1,
+  info_scalar_float = 0,
+  info_scalar_int = 1,
+  info_string = 2,
+  info_vector_float = 3,
+  info_vector_int = 4,
+};
+
 struct InfoType {
-  std::int8_t type;
+  InfoKind type;
   std::uint32_t offset;
 };
 
@@ -26,12 +35,12 @@ class Info {
 
   void parse();
 
-  std::vector<float> scalar_floats;                      // type 0
-  std::vector<std::int32_t> scalar_ints;                 // type 1
-  std::vector<std::string> strings;                      // type 2
+  std::vector<float> scalar_floats;
+  std::vector<std::int32_t> scalar_ints;
+  std::vector<std::string> strings;
 
-  std::vector<std::vector<float>> vector_floats;         // type 3
-  std::vector<std::vector<std::int32_t>> vector_ints;    // type 4
+  std::vector<std::vector<float>> vector_floats;
+  std::vector<std::vector<std::int32_t>> vector_ints;
 public:
   Info(const char * data, std::size_t len, const Header * header, std::uint32_t n_info)
       : header(header), n_info(n_info) {

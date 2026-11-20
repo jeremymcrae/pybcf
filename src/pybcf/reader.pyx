@@ -3,11 +3,20 @@ from pathlib import Path
 
 from libcpp cimport bool
 from libc.math cimport isnan
-from libc.stdint cimport int8_t, uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
+from libc.stdint cimport uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
 import numpy as np
+
+cdef extern from 'types.h' namespace 'bcf':
+    cdef enum Types:
+        flag
+        int8
+        int16
+        int32
+        float_
+        char_
 
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
@@ -31,8 +40,16 @@ cdef extern from 'header.h' namespace 'bcf':
         vector[string] get_formats() except +
 
 cdef extern from 'info.h' namespace 'bcf':
+    cdef enum InfoKind:
+        info_flag
+        info_scalar_float
+        info_scalar_int
+        info_string
+        info_vector_float
+        info_vector_int
+
     cdef struct InfoType:
-        int8_t type
+        InfoKind type
         uint32_t offset
 
     cdef cppclass Info:
@@ -49,7 +66,7 @@ cdef extern from 'info.h' namespace 'bcf':
 
 cdef extern from 'sample_data.h' namespace 'bcf':
     cdef struct FormatType:
-        uint8_t data_type
+        Types data_type
         uint8_t type_size
         uint32_t offset
         uint32_t n_vals
@@ -167,24 +184,24 @@ cdef class BcfInfo:
         if not self.thisptr.get_type(key, info_type):
             raise KeyError(f'unknown INFO field: {_key}')
 
-        cdef int8_t datatype = info_type.type
+        cdef InfoKind datatype = info_type.type
         cdef uint32_t offset = info_type.offset
         cdef float f_val
         cdef int32_t i_val
 
-        if datatype == -1:
+        if datatype == info_flag:
             return True
-        if datatype == 0:
+        elif datatype == info_scalar_float:
             f_val = self.thisptr.get_float(offset)
             return None if isnan(f_val) else f_val
-        elif datatype == 1:
+        elif datatype == info_scalar_int:
             i_val = self.thisptr.get_int(offset)
             return None if i_val == INT32_MIN else i_val
-        elif datatype == 2:
+        elif datatype == info_string:
             return self.thisptr.get_string(offset).decode('utf8')
-        elif datatype == 3:
+        elif datatype == info_vector_float:
             return tuple(None if isnan(x) else x for x in self.thisptr.get_floats(offset))
-        elif datatype == 4:
+        elif datatype == info_vector_int:
             return tuple(None if x == INT32_MIN else x for x in self.thisptr.get_ints(offset))
 
 cdef class BcfSampleData:
@@ -223,8 +240,7 @@ cdef class BcfSampleData:
 
         cdef vector[int32_t] v_int
         cdef vector[float] v_float
-        if fmt_type.data_type == 1 or fmt_type.data_type == 2 or fmt_type.data_type == 3:
-            # integer types
+        if fmt_type.data_type in (int8, int16, int32):
             if n_vals == 0:
                 if n_per_sample > 1:
                     return np.empty((n_samples, n_per_sample), dtype=float)
@@ -234,12 +250,12 @@ cdef class BcfSampleData:
             if n_per_sample > 1:
                 arr = np.reshape(arr, (-1, n_per_sample))
 
-            mis_val = -1 if key == b'GT' else INT32_MIN
+            mis_val = -1 if fmt_type.is_geno else INT32_MIN
             missing = arr == mis_val
             arr = arr.astype(float)
             arr[missing] = float('nan')
             return arr
-        elif fmt_type.data_type == 5:
+        elif fmt_type.data_type == float_:
             if n_vals == 0:
                 if n_per_sample > 1:
                     return np.empty((n_samples, n_per_sample), dtype=np.float32)
@@ -249,11 +265,10 @@ cdef class BcfSampleData:
             if n_per_sample > 1:
                 arr = np.reshape(arr, (-1, n_per_sample))
             return arr.copy()
-        elif fmt_type.data_type == 7:
-            # string type
+        elif fmt_type.data_type == char_:
             return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(fmt_type)]
 
-        raise ValueError(f'unknown datatype: {fmt_type}')
+        raise ValueError(f'unknown datatype: {<int>fmt_type.data_type}')
 
     @property
     def phased(self):

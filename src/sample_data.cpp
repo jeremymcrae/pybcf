@@ -47,8 +47,7 @@ SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t 
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf.size()) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
-    keys[key] = {static_cast<std::uint8_t>(type_val.type), type_val.type_size, buf_idx,
-                 type_val.n_vals, is_geno};
+    keys[key] = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
 }

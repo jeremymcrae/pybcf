@@ -3,53 +3,31 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
-#include <unordered_set>
 #include <unordered_map>
+#include <vector>
 
 namespace bcf {
 
-struct ContigField {
-  std::string id;
-};
-
-struct FilterField {
-  std::string id;
-  std::string description;
-};
-
-struct FormatField {
-  std::string id;
-  std::string number;
-  std::string type;
-  std::string description;
-};
-
 struct InfoField {
   std::string id;
-  std::string number;
-  std::string type;
-  std::string description;
+  bool is_list;
 };
 
 class Header {
-  std::unordered_set<std::string> valid = {"contig", "INFO", "FILTER", "FORMAT"};
-  std::uint32_t idx=0;
-  std::uint32_t contig_idx=0;
-  bool has_idx_tag=false;
+  std::unordered_map<std::string, std::uint32_t> contig_ids;
 public:
   Header(const std::string &text);
-  Header() {}
-  std::unordered_map<std::uint32_t, ContigField> contigs;
+  Header() = default;
+  std::unordered_map<std::uint32_t, std::string> contigs;
   std::unordered_map<std::uint32_t, InfoField> info;
-  std::unordered_map<std::uint32_t, FilterField> filters;
-  std::unordered_map<std::uint32_t, FormatField> format;
-  std::vector<std::string> samples={};
-  std::vector<std::string> get_contigs();
-  std::vector<std::string> get_info();
-  std::vector<std::string> get_filters();
-  std::vector<std::string> get_formats();
-  std::uint32_t get_contig_id(std::string contig);
+  std::unordered_map<std::uint32_t, std::string> filters;
+  std::unordered_map<std::uint32_t, std::string> format;
+  std::vector<std::string> samples;
+  std::vector<std::string> get_contigs() const;
+  std::vector<std::string> get_info() const;
+  std::vector<std::string> get_filters() const;
+  std::vector<std::string> get_formats() const;
+  std::uint32_t get_contig_id(const std::string & contig) const;
 };
 
 }

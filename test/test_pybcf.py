@@ -406,6 +406,7 @@ class TestBcfReader(unittest.TestCase):
             '##INFO=<ID=FV,Number=.,Type=Float,Description="vec float">\n'
             '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
             'chr1\t10\t.\tA\tG\t.\t.\tIS=.;IV=1,.,3;FS=.;FV=1.5,.,2.5\n'
+            'chr1\t20\t.\tC\tT\t.\t.\tIV=5;FV=3.5\n'
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             vcf_path = Path(tmpdir) / 'missing_info.vcf'
@@ -415,10 +416,9 @@ class TestBcfReader(unittest.TestCase):
                 for rec in vin:
                     vout.write(rec)
 
-            var_pysam = next(VariantFile(bcf_path))
-            var_pybcf = next(BcfReader(bcf_path))
-            for field in ('IS', 'IV', 'FS', 'FV'):
-                self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
+            for var_pysam, var_pybcf in zip(VariantFile(bcf_path), BcfReader(bcf_path)):
+                for field in var_pysam.info:
+                    self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
 
     def test_corrupt_or_missing_bcf_raises_value_error(self):
         ''' check GzReader raises ValueError on missing or truncated/corrupt BCF streams

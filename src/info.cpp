@@ -1,4 +1,5 @@
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "info.h"
@@ -12,7 +13,8 @@ std::vector<std::string> Info::get_keys() {
     is_parsed = true;
   }
   std::vector<std::string> key_vals;
-  for (auto & x : keys) {
+  key_vals.reserve(keys.size());
+  for (const auto & x : keys) {
     key_vals.push_back(x.first);
   }
   return key_vals;
@@ -28,99 +30,57 @@ void Info::parse() {
   }
 
   std::uint32_t buf_idx = 0;
-  Typed type_val;
-
   for (std::uint32_t i = 0; i < n_info; i++) {
-    type_val = Typed(buf.data(), buf.size(), buf_idx);
-    std::int32_t id_idx = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
-    if (id_idx < 0 || header->info.count(static_cast<std::uint32_t>(id_idx)) == 0) {
+    Typed id_type(buf.data(), buf.size(), buf_idx);
+    std::int32_t id_idx = parse_int(buf.data(), buf.size(), buf_idx, id_type.type_size);
+    auto field_it = (id_idx >= 0) ? header->info.find(static_cast<std::uint32_t>(id_idx))
+                                  : header->info.end();
+    if (field_it == header->info.end()) {
       throw std::invalid_argument("unknown INFO ID index: " + std::to_string(id_idx));
     }
-    const InfoField & field = header->info.at(static_cast<std::uint32_t>(id_idx));
-    const std::string & key = field.id;
-    const std::string & number = field.number;
-    bool has_multiple = number == "A" || number == "R" || number == "G";
-    if (!number.empty() && number.find_first_not_of("0123456789") == std::string::npos) {
-      has_multiple |= std::stol(number) > 1;
-    }
+    const InfoField & field = field_it->second;
 
-    // now parse the value
-    type_val = Typed(buf.data(), buf.size(), buf_idx);
+    Typed type_val(buf.data(), buf.size(), buf_idx);
+    bool is_vector = (type_val.n_vals > 1) || field.is_list;
 
-    std::int8_t info_idx = 0;
-    std::uint32_t idx = 0;
-    // figure out which datastore to keep values in
     switch (type_val.type) {
       case flag:
-        info_idx = -1;
-        idx = 0;
-        break;
-      case float_:
-        info_idx = 0;
+        keys[field.id] = {-1, 0};
         break;
       case char_:
-        info_idx = 2;
+        keys[field.id] = {2, static_cast<std::uint32_t>(strings.size())};
+        strings.push_back(parse_string(buf.data(), buf.size(), buf_idx, type_val.n_vals));
+        break;
+      case float_:
+        if (!is_vector) {
+          keys[field.id] = {0, static_cast<std::uint32_t>(scalar_floats.size())};
+          scalar_floats.push_back(parse_float(buf.data(), buf.size(), buf_idx));
+        } else {
+          std::vector<float> vals(type_val.n_vals);
+          for (std::uint32_t j = 0; j < type_val.n_vals; j++) {
+            vals[j] = parse_float(buf.data(), buf.size(), buf_idx);
+          }
+          keys[field.id] = {3, static_cast<std::uint32_t>(vector_floats.size())};
+          vector_floats.push_back(std::move(vals));
+        }
         break;
       default:
-        info_idx = 1;
+        if (!is_vector) {
+          keys[field.id] = {1, static_cast<std::uint32_t>(scalar_ints.size())};
+          scalar_ints.push_back(parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size));
+        } else {
+          std::vector<std::int32_t> vals(type_val.n_vals);
+          for (std::uint32_t j = 0; j < type_val.n_vals; j++) {
+            vals[j] = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
+          }
+          keys[field.id] = {4, static_cast<std::uint32_t>(vector_ints.size())};
+          vector_ints.push_back(std::move(vals));
+        }
         break;
     }
-
-    if (type_val.type != flag) {
-      if ((type_val.n_vals > 1 || has_multiple) && (type_val.type != char_)) {
-        // increase offset for vector values
-        info_idx += 3;
-      }
-      if (type_val.type == float_) {
-        if (type_val.n_vals == 1 && !has_multiple) {
-          idx = scalar_floats.size();
-        } else {
-          idx = vector_floats.size();
-          vector_floats.push_back({});
-        }
-      } else if (type_val.type == char_) {
-        idx = strings.size();
-      } else {
-        if (type_val.n_vals == 1 && !has_multiple) {
-          idx = scalar_ints.size();
-        } else {
-          idx = vector_ints.size();
-          vector_ints.push_back({});
-        }
-      }
-    }
-
-    keys[key] = {info_idx, idx};
-
-    if (type_val.type == char_) {
-      strings.push_back(parse_string(buf.data(), buf.size(), buf_idx, type_val.n_vals));
-    } else {
-      for (std::uint32_t j = 0; j < type_val.n_vals; j++) {
-        switch (type_val.type) {
-          case flag:
-            break;
-          case float_: {
-            float f_val = parse_float(buf.data(), buf.size(), buf_idx);
-            if (type_val.n_vals == 1 && !has_multiple) {
-              scalar_floats.push_back(f_val);
-            } else {
-              vector_floats[idx].push_back(f_val);
-            }
-            break;
-          }
-          default: {
-            std::int32_t i_val = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
-            if (type_val.n_vals == 1 && !has_multiple) {
-              scalar_ints.push_back(i_val);
-            } else {
-              vector_ints[idx].push_back(i_val);
-            }
-            break;
-          }
-        }
-      }
-    }
   }
+
+  std::vector<char>().swap(buf);
 }
 
 InfoType Info::get_type(std::string &key) {
@@ -129,10 +89,11 @@ InfoType Info::get_type(std::string &key) {
     is_parsed = true;
   }
 
-  if (keys.count(key) == 0) {
+  auto it = keys.find(key);
+  if (it == keys.end()) {
     throw std::invalid_argument("unknown info field: " + key);
   }
-  return keys[key];
+  return it->second;
 }
 
 }

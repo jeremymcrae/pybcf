@@ -15,9 +15,8 @@
 
 namespace bcf {
 
-SampleData::SampleData(GzReader & infile, Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
+SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
   n_samples = _n_samples;
-  header = &_header;
   if (len == 0) {
     return;
   }
@@ -34,10 +33,12 @@ SampleData::SampleData(GzReader & infile, Header & _header, std::uint32_t len, s
   for (std::uint32_t i = 0; i < n_fmt; i++) {
     type_val = Typed(buf.data(), buf.size(), buf_idx);
     std::int32_t format_idx = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
-    if (format_idx < 0 || header->format.count(static_cast<std::uint32_t>(format_idx)) == 0) {
+    auto fmt_it = (format_idx >= 0) ? _header.format.find(static_cast<std::uint32_t>(format_idx))
+                                    : _header.format.end();
+    if (fmt_it == _header.format.end()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
     }
-    const std::string & key = header->format.at(static_cast<std::uint32_t>(format_idx)).id;
+    const std::string & key = fmt_it->second;
     bool is_geno = key == "GT";
 
     type_val = Typed(buf.data(), buf.size(), buf_idx);

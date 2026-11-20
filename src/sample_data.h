@@ -31,13 +31,12 @@ class SampleData {
   // for each format record, track which type it is, and some index value
   std::unordered_map<std::string, FormatType> keys;
   std::vector<char> buf;
-  Header * header = nullptr;
   std::vector<std::int32_t> get_geno(FormatType &type);
   std::vector<std::int32_t> parse_8bit_ints(FormatType & type);
   std::vector<std::int32_t> parse_16bit_ints(FormatType & type);
   std::vector<std::int32_t> parse_32bit_ints(FormatType & type);
 public:
-  SampleData(GzReader &infile, Header &_header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
+  SampleData(GzReader &infile, const Header &header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
   SampleData() = default;
   std::vector<std::string> get_keys();
   FormatType get_type(std::string &key);

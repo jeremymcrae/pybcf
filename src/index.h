@@ -33,8 +33,8 @@ class IndexFile {
 public:
   IndexFile(std::string path);
   IndexFile() = default;
-  std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end);
-  Offsets query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end);
+  std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end) const;
+  bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
   bool has_index = false;
 };
 

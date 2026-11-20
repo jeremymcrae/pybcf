@@ -42,31 +42,27 @@ BCF::BCF(std::string path, std::string index_path) {
   
 }
 
-// extract the next variant from the BCF
-Variant BCF::nextvar() {
+// extract the next variant from the BCF, returning false at EOF or end of region
+bool BCF::nextvar(Variant & var) {
   if (empty_region) {
-    throw std::out_of_range("no variants in queried region");
+    return false;
   }
-  try {
-    Variant var(infile, header);
+  while (var.read(infile, header)) {
     if (!query_chrom.empty() && var.chrom != query_chrom) {
-      throw std::out_of_range("variant not on required chrom");
+      empty_region = true;
+      return false;
     }
-
-    while (static_cast<std::int64_t>(var.pos) + std::max<std::int32_t>(1, var.rlen) - 1 < query_start) {
-      var = Variant(infile, header);
-      if (!query_chrom.empty() && var.chrom != query_chrom) {
-        throw std::out_of_range("variant not on required chrom");
-      }
+    if (static_cast<std::int64_t>(var.pos) + std::max<std::int32_t>(1, var.rlen) - 1 < query_start) {
+      continue;
     }
     if (var.pos > query_end) {
-      throw std::out_of_range("variant out of bounds");
+      empty_region = true;
+      return false;
     }
-    return var;
-  } catch (const std::out_of_range &) {
-    empty_region = true;
-    throw;
+    return true;
   }
+  empty_region = true;
+  return false;
 }
 
 /// @brief define genome region to extract variants from
@@ -86,11 +82,12 @@ void BCF::set_region(std::string chrom, std::int32_t start, std::int32_t end) {
   query_chrom = chrom;
   query_start = start;
   query_end = end;
-  empty_region = false;
-  try {
-    Offsets offset = idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end);
+
+  Offsets offset;
+  if (idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end, offset)) {
     infile.seek(offset);
-  } catch (const std::out_of_range &) {
+    empty_region = false;
+  } else {
     empty_region = true;
   }
 }

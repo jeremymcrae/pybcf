@@ -23,7 +23,7 @@ class BCF {
   bool empty_region=false;
 public:
   BCF(std::string path, std::string index_path="");
-  Variant nextvar();
+  bool nextvar(Variant & var);
   void set_region(std::string chrom, std::int32_t start=1, std::int32_t end=INT32_MAX);
   void close();
   Header header;

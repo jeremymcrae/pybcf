@@ -23,7 +23,7 @@ cdef extern from 'bcf.h' namespace 'bcf':
         # declare class constructor and methods
         BCF(string path, string index_path) except +
         BCF() except +
-        Variant nextvar() except +
+        bool nextvar(Variant &) except +
         void set_region(string chrom, int32_t start, int32_t end) except +
         void close() except +
         Header header
@@ -290,7 +290,6 @@ cdef class BcfVariant:
     cdef BcfSampleData _samples
     def __cinit__(self, BcfReader bcf):
         self._reader = bcf
-        self.thisptr = bcf.thisptr.nextvar()
 
     @property
     def chrom(self):
@@ -408,10 +407,10 @@ cdef class BcfReader:
         '''
         if not self.is_open:
             raise ValueError('bcf is closed')
-        try:
-            return BcfVariant(self)
-        except IndexError:
+        cdef BcfVariant var = BcfVariant(self)
+        if not self.thisptr.nextvar(var.thisptr):
             raise StopIteration
+        return var
 
     @property
     def header(self):

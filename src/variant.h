@@ -16,8 +16,8 @@ namespace bcf {
 
 class Variant {
 public:
-  Variant(GzReader & infile, const Header & header);
   Variant() = default;
+  bool read(GzReader & infile, const Header & header);
 
   std::string chrom;
   std::int32_t pos = 0;

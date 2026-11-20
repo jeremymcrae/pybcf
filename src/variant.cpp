@@ -6,14 +6,15 @@
 
 namespace bcf {
 
-/// @brief start a Variant object
+/// @brief read the next variant record from a BCF stream
 /// @param infile file to read variant data from
 /// @param header for interpreting contig name, info and sample fields
-Variant::Variant(GzReader & infile, const Header & header) {
+/// @return false at clean EOF, true when a variant was read
+bool Variant::read(GzReader & infile, const Header & header) {
   std::uint32_t l_shared = 0;
   std::size_t n_read = infile.read(&l_shared, sizeof(std::uint32_t));
   if (n_read == 0) {
-    throw std::out_of_range("reached end of file");
+    return false;
   }
   if (n_read != sizeof(std::uint32_t)) {
     throw std::invalid_argument("truncated BCF variant header");
@@ -42,6 +43,7 @@ Variant::Variant(GzReader & infile, const Header & header) {
 
   std::uint32_t qual_bits = 0;
   std::memcpy(&qual_bits, buf.data() + idx, 4);
+  qual = std::nanf("");
   if (!is_bcf_float_missing(qual_bits)) {
     std::memcpy(&qual, &qual_bits, 4);
   }
@@ -96,6 +98,7 @@ Variant::Variant(GzReader & infile, const Header & header) {
 
   info = Info(buf.data() + idx, buf.size() - idx, &header, n_info);
   sample_data = SampleData(infile, header, sampledata_len, n_fmt, n_sample);
+  return true;
 }
 
 }

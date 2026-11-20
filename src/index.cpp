@@ -80,7 +80,7 @@ IndexFile::IndexFile(std::string path) {
 }
 
 /// @brief calculate the list of bins that may overlap with region [beg,end) (zero-based).
-std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) {
+std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) const {
   std::vector<std::uint32_t> bins;
   std::int64_t max_coord = 1LL << (min_shift + depth * 3);
   if (beg >= max_coord) {
@@ -108,16 +108,13 @@ std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int6
 }
 
 /// @brief find the virtual file offset for the first chunk overlapping [beg, end)
-Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end) {
+bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const {
   if (end < beg) {
     throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
   }
-  if (contig_id >= indices.size()) {
-    throw std::out_of_range("contig ID out of range in CSI index: " + std::to_string(contig_id));
-  }
   std::int64_t max_coord = 1LL << (min_shift + depth * 3);
-  if (beg >= max_coord) {
-    throw std::out_of_range("region starts past maximum indexed coordinate");
+  if (contig_id >= indices.size() || beg >= max_coord) {
+    return false;
   }
   if (beg < 0) {
     beg = 0;
@@ -125,7 +122,7 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
 
   const auto & contig_bins = indices[contig_id];
   if (contig_bins.empty()) {
-    throw std::out_of_range("no indexed bins on contig");
+    return false;
   }
 
   // Walk from the leaf bin containing `beg` up to the root to find `min_off`.
@@ -154,9 +151,10 @@ Offsets IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t
   }
 
   if (best_offset == UINT64_MAX) {
-    throw std::out_of_range("cannot find bin for: " + std::to_string(beg) + "-" + std::to_string(end));
+    return false;
   }
-  return parse_virtual_offset(best_offset);
+  out = parse_virtual_offset(best_offset);
+  return true;
 }
 
 }

@@ -206,6 +206,49 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(bcf.header.filters, ['PASS'])
             self.assertEqual(list(bcf), [])
 
+    def test_negative_info_ints_and_empty_info(self):
+        ''' check negative int8/int16/int32 INFO values and zero-INFO variants match pysam
+        '''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bcf_path = Path(tmpdir) / 'neg_info.bcf'
+            with VariantFile(bcf_path, 'wb') as out:
+                out.header.contigs.add('chr1', length=10000)
+                out.header.info.add('I_SCALAR', 1, 'Integer', 'Scalar signed int')
+                out.header.info.add('I_VEC', '.', 'Integer', 'Vector signed ints')
+                out.header.info.add('F_SCALAR', 1, 'Float', 'Scalar float')
+
+                # Variant 1: int8 negative values (-1, -126)
+                r1 = out.new_record(contig='chr1', start=99, alleles=('A', 'G'))
+                r1.info['I_SCALAR'] = -5
+                r1.info['I_VEC'] = (-126, -1, 0, 127)
+                r1.info['F_SCALAR'] = -2.5
+                out.write(r1)
+
+                # Variant 2: int16 negative values (-300, -32766)
+                r2 = out.new_record(contig='chr1', start=199, alleles=('C', 'T'))
+                r2.info['I_SCALAR'] = -300
+                r2.info['I_VEC'] = (-32766, -129, 32767)
+                out.write(r2)
+
+                # Variant 3: int32 negative values (-100000)
+                r3 = out.new_record(contig='chr1', start=299, alleles=('G', 'A'))
+                r3.info['I_SCALAR'] = -100000
+                r3.info['I_VEC'] = (-2000000, -32769, 100000)
+                out.write(r3)
+
+                # Variant 4: zero INFO fields
+                r4 = out.new_record(contig='chr1', start=399, alleles=('T', 'C'))
+                out.write(r4)
+
+            vcf_pysam = VariantFile(bcf_path)
+            vcf_pybcf = BcfReader(bcf_path)
+            records = list(zip(vcf_pysam, vcf_pybcf))
+            self.assertEqual(len(records), 4)
+            for var_pysam, var_pybcf in records:
+                self.assertEqual(set(var_pysam.info), set(var_pybcf.info))
+                for field in var_pysam.info:
+                    self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
+
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields
     '''

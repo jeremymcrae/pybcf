@@ -34,12 +34,12 @@ SampleData::SampleData(igzstream & infile, Header & _header, std::uint32_t len, 
   Typed type_val;
   bool is_geno;
   for (std::uint32_t i = 0; i < n_fmt; i++ ){
-    type_val = {&buf[0], buf_idx};
-    format_idx = parse_int(&buf[0], buf_idx, type_val.type_size);
+    type_val = Typed(buf.data(), buf.size(), buf_idx);
+    format_idx = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
     key = header->format[format_idx].id;
     is_geno = key == "GT";
 
-    type_val = {&buf[0], buf_idx};
+    type_val = Typed(buf.data(), buf.size(), buf_idx);
     keys[key] = {(std::uint8_t) type_val.type, type_val.type_size, buf_idx, 
                  type_val.n_vals, is_geno};
     buf_idx += (type_val.n_vals * type_val.type_size * n_samples);
@@ -85,7 +85,7 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   std::uint32_t offset = type.offset;
   std::uint32_t n=0;
   for (; n < (n_samples * type.n_vals); n++) {
-    vals[n] = parse_int(&buf[0], offset, type.type_size);
+    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
   }
   return vals;
 }
@@ -256,7 +256,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
 #endif
   offset += n;
   for (; n < (n_samples * type.n_vals); n++) {
-    vals[n] = parse_int(&buf[0], offset, type.type_size);
+    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
   }
   return vals;
 }
@@ -325,7 +325,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
 #endif
   offset += n;
   for (; n < (n_samples * type.n_vals); n++) {
-    vals[n] = parse_int(&buf[0], offset, type.type_size);
+    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
   }
   return vals;
 }
@@ -385,7 +385,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
 #endif
   offset += n;
   for (; n < (n_samples * type.n_vals); n++) {
-    vals[n] = parse_int(&buf[0], offset, type.type_size);
+    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
   }
   return vals;
 }
@@ -526,7 +526,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   n = n / type.n_vals;
   for (; n < n_samples; n++) {
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      vals[idx] = parse_int(&buf[0], offset, type.type_size);
+      vals[idx] = parse_int(buf.data(), buf.size(), offset, type.type_size);
       if (vals[idx] == missing_indicator) {
         vals[idx] = 0;  // convert missing values to missing genotypes
       }
@@ -560,7 +560,7 @@ std::vector<std::string> SampleData::get_strings(FormatType & type) {
   vals.resize(n_samples);
   std::uint32_t offset = type.offset;
   for (std::uint32_t n=0; n < n_samples; n++) {
-    vals[n] = parse_string(&buf[0], offset, type.n_vals);
+    vals[n] = parse_string(buf.data(), buf.size(), offset, type.n_vals);
   }
   return vals;
 }

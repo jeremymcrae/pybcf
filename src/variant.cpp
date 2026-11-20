@@ -1,85 +1,104 @@
-
+#include <climits>
+#include <cstring>
+#include <stdexcept>
 
 #include "variant.h"
 
 namespace bcf {
 
-/// @brief start a Varint object
-/// @param infile file to read varint data from (as input gzstream)
+/// @brief start a Variant object
+/// @param infile file to read variant data from (as input gzstream)
 /// @param header for interpreting contig name, info and sample fields
-Variant::Variant(igzstream & infile,  Header & header) {
-
-  std::uint32_t metadata_len=0;
-  infile.read(reinterpret_cast<char *>(&metadata_len), sizeof(std::uint32_t));
-  metadata_len += 4;
-  
-  if (infile.eof()) {
+Variant::Variant(igzstream & infile, Header & header) {
+  std::uint32_t l_shared = 0;
+  infile.read(reinterpret_cast<char *>(&l_shared), sizeof(std::uint32_t));
+  if (infile.gcount() == 0 && infile.eof()) {
     throw std::out_of_range("reached end of file");
   }
+  if (infile.fail()) {
+    throw std::invalid_argument("truncated BCF variant header");
+  }
+  if (l_shared < 24 || l_shared > UINT32_MAX - 4) {
+    throw std::invalid_argument("invalid BCF shared record length");
+  }
 
+  std::uint32_t metadata_len = l_shared + 4;
   buf.resize(metadata_len);
-  infile.read(reinterpret_cast<char *>(&buf[0]), metadata_len);
+  infile.read(buf.data(), metadata_len);
+  if (infile.fail()) {
+    throw std::invalid_argument("truncated BCF variant record");
+  }
 
-  std::uint32_t sampledata_len;
+  std::uint32_t sampledata_len = 0;
   std::uint32_t idx = 0;
-  sampledata_len = *reinterpret_cast<std::uint32_t *>(&buf[idx]);
+  std::memcpy(&sampledata_len, buf.data() + idx, 4);
   idx += 4;
-  contig_idx = *reinterpret_cast<std::int32_t *>(&buf[idx]);
+  std::memcpy(&contig_idx, buf.data() + idx, 4);
   idx += 4;
-  pos = *reinterpret_cast<std::int32_t *>(&buf[idx]) + 1; // convert to 1-based coordinate
+  std::int32_t pos0 = 0;
+  std::memcpy(&pos0, buf.data() + idx, 4);
+  pos = pos0 + 1; // convert to 1-based coordinate
   idx += 4;
-  rlen = *reinterpret_cast<std::int32_t *>(&buf[idx]);
+  std::memcpy(&rlen, buf.data() + idx, 4);
   idx += 4;
-  
-  if (*reinterpret_cast<std::uint32_t *>(&buf[idx]) != 0x7f800001) {
-    qual = *reinterpret_cast<float *>(&buf[idx]);
+
+  std::uint32_t qual_bits = 0;
+  std::memcpy(&qual_bits, buf.data() + idx, 4);
+  if (!is_bcf_float_missing(qual_bits)) {
+    std::memcpy(&qual, &qual_bits, 4);
   }
   idx += 4;
 
-  chrom = header.contigs[contig_idx].id;
-  
-  std::uint32_t n_allele_info = *reinterpret_cast<std::uint32_t *>(&buf[idx]);;
+  if (contig_idx < 0 || header.contigs.count(static_cast<std::uint32_t>(contig_idx)) == 0) {
+    throw std::invalid_argument("unknown contig index: " + std::to_string(contig_idx));
+  }
+  chrom = header.contigs.at(static_cast<std::uint32_t>(contig_idx)).id;
+
+  std::uint32_t n_allele_info = 0;
+  std::memcpy(&n_allele_info, buf.data() + idx, 4);
   idx += 4;
   n_alleles = n_allele_info >> 16;
   n_info = n_allele_info & 0xffff;
-  
+
   if (n_alleles == 0) {
     throw std::invalid_argument(chrom + ":" + std::to_string(pos) + " lacks a ref allele");
   }
-  
-  std::uint32_t n_fmt_sample = *reinterpret_cast<std::uint32_t *>(&buf[idx]);
+
+  std::uint32_t n_fmt_sample = 0;
+  std::memcpy(&n_fmt_sample, buf.data() + idx, 4);
   idx += 4;
   n_sample = n_fmt_sample & 0xffffff;
   n_fmt = n_fmt_sample >> 24;
 
   // get variant ID
-  Typed type_val;
-  type_val = {&buf[0], idx};
-  varid = parse_string(&buf[0], idx, type_val.n_vals);
-  
+  Typed type_val(buf.data(), buf.size(), idx);
+  varid = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
+
   // get ref allele. We previously raised an error if no ref allele exists
-  type_val = {&buf[0], idx};
-  ref = parse_string(&buf[0], idx, type_val.n_vals);
+  type_val = Typed(buf.data(), buf.size(), idx);
+  ref = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
 
   // get alt alleles
   alts.resize(n_alleles - 1);
   for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
-    type_val = {&buf[0], idx};
-    alts[i] = parse_string(&buf[0], idx, type_val.n_vals);
+    type_val = Typed(buf.data(), buf.size(), idx);
+    alts[i] = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
   }
 
   // read the filter fields
-  type_val = {&buf[0], idx};
+  type_val = Typed(buf.data(), buf.size(), idx);
   filters.resize(type_val.n_vals);
   for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
-    filters[i] = header.filters[parse_int(&buf[0], idx, type_val.type_size)].id;
+    std::int32_t filter_idx = parse_int(buf.data(), buf.size(), idx, type_val.type_size);
+    if (filter_idx < 0 || header.filters.count(static_cast<std::uint32_t>(filter_idx)) == 0) {
+      throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
+    }
+    filters[i] = header.filters.at(static_cast<std::uint32_t>(filter_idx)).id;
   }
-  
+
   // prepare the info fields and format fields
-  info = Info(&buf[idx], &header, n_info);
+  info = Info(buf.data() + idx, buf.size() - idx, &header, n_info);
   sample_data = SampleData(infile, header, sampledata_len, n_fmt, n_sample);
 }
-
-
 
 }

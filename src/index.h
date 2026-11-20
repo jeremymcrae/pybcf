@@ -30,6 +30,8 @@ class IndexFile {
   std::int32_t min_shift = 0;
   std::int32_t depth = 0;
   std::vector<std::unordered_map<std::uint32_t, Bin>> indices;
+
+  std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:
   IndexFile(std::string path);
   IndexFile() = default;

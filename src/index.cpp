@@ -8,10 +8,24 @@
 
 namespace bcf {
 
-/// @brief parse the uncompressed and compressed parts of a virtual offset
-static Offsets parse_virtual_offset(std::uint64_t v_offset) {
+namespace {
+
+/// @brief split a 64-bit BGZF virtual offset into intra-block and file offsets
+Offsets parse_virtual_offset(std::uint64_t v_offset) {
   return {v_offset & 0xffffULL, v_offset >> 16};
 }
+
+/// @brief index of the first CSI octree bin at `level` (0 is root)
+std::int64_t first_bin_at_level(std::int32_t level) {
+  return ((1LL << (level * 3)) - 1) / 7;
+}
+
+/// @brief parent bin index in the 8-ary CSI binning tree
+std::int64_t parent_bin(std::int64_t bin) {
+  return (bin - 1) >> 3;
+}
+
+} // namespace
 
 /// @brief load file according to https://samtools.github.io/hts-specs/CSIv1.pdf
 /// @param path path to CSI index file
@@ -45,7 +59,7 @@ IndexFile::IndexFile(std::string path) {
     throw std::invalid_argument("invalid CSI reference count");
   }
 
-  std::uint64_t bin_limit = ((1ULL << ((depth + 1) * 3)) - 1) / 7;
+  std::uint64_t bin_limit = static_cast<std::uint64_t>(first_bin_at_level(depth + 1));
   indices.reserve(n_ref);
 
   for (std::int32_t i = 0; i < n_ref; i++) {
@@ -79,29 +93,24 @@ IndexFile::IndexFile(std::string path) {
   has_index = true;
 }
 
-/// @brief calculate the list of bins that may overlap with region [beg,end) (zero-based).
+/// @brief calculate the list of bins that may overlap with 0-based region [beg, end)
 std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) const {
   std::vector<std::uint32_t> bins;
-  std::int64_t max_coord = 1LL << (min_shift + depth * 3);
-  if (beg >= max_coord) {
+  std::int64_t limit = max_coord();
+  if (beg >= limit) {
     return bins;
   }
-  if (beg < 0) {
-    beg = 0;
-  }
-  if (end <= beg) {
-    end = beg + 1;
-  }
-  if (end > max_coord) {
-    end = max_coord;
-  }
-  std::int32_t s = min_shift + depth * 3;
-  std::int64_t t = 0;
-  --end;
-  for (std::int32_t l = 0; l <= depth; s -= 3, t += 1LL << (l * 3), ++l) {
-    std::int64_t b = t + (beg >> s), e = t + (end >> s);
-    for (std::int64_t i = b; i <= e; ++i) {
-      bins.push_back(static_cast<std::uint32_t>(i));
+  beg = std::max<std::int64_t>(0, beg);
+  end = std::min(limit, std::max(beg + 1, end));
+
+  std::int64_t last_pos = end - 1;
+  std::int32_t shift = min_shift + depth * 3;
+  for (std::int32_t level = 0; level <= depth; ++level, shift -= 3) {
+    std::int64_t level_offset = first_bin_at_level(level);
+    std::int64_t first_bin = level_offset + (beg >> shift);
+    std::int64_t last_bin = level_offset + (last_pos >> shift);
+    for (std::int64_t bin = first_bin; bin <= last_bin; ++bin) {
+      bins.push_back(static_cast<std::uint32_t>(bin));
     }
   }
   return bins;
@@ -112,13 +121,10 @@ bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t en
   if (end < beg) {
     throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
   }
-  std::int64_t max_coord = 1LL << (min_shift + depth * 3);
-  if (contig_id >= indices.size() || beg >= max_coord) {
+  if (contig_id >= indices.size() || beg >= max_coord()) {
     return false;
   }
-  if (beg < 0) {
-    beg = 0;
-  }
+  beg = std::max<std::int64_t>(0, beg);
 
   const auto & contig_bins = indices[contig_id];
   if (contig_bins.empty()) {
@@ -127,14 +133,14 @@ bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t en
 
   // Walk from the leaf bin containing `beg` up to the root to find `min_off`.
   std::uint64_t min_off = 0;
-  std::int64_t b = ((1LL << (depth * 3)) - 1) / 7 + (beg >> min_shift);
-  for (std::int32_t d = depth; d >= 0; --d) {
-    auto it = contig_bins.find(static_cast<std::uint32_t>(b));
+  std::int64_t bin = first_bin_at_level(depth) + (beg >> min_shift);
+  for (std::int32_t level = depth; level >= 0; --level) {
+    auto it = contig_bins.find(static_cast<std::uint32_t>(bin));
     if (it != contig_bins.end()) {
       min_off = it->second.loffset;
       break;
     }
-    b = (b - 1) >> 3;
+    bin = parent_bin(bin);
   }
 
   std::uint64_t best_offset = UINT64_MAX;

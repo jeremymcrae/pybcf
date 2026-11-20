@@ -47,21 +47,26 @@ Variant BCF::nextvar() {
   if (empty_region) {
     throw std::out_of_range("no variants in queried region");
   }
-  Variant var = Variant(infile, header);
-  if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
-    throw std::out_of_range("variant not on required chrom");
-  }
-  
-  while (var.pos < query_start) {
-    var = Variant(infile, header);
-    if ((query_chrom.size() != 0) && (var.chrom != query_chrom)) {
+  try {
+    Variant var(infile, header);
+    if (!query_chrom.empty() && var.chrom != query_chrom) {
       throw std::out_of_range("variant not on required chrom");
     }
+
+    while (static_cast<std::int64_t>(var.pos) + std::max<std::int32_t>(1, var.rlen) - 1 < query_start) {
+      var = Variant(infile, header);
+      if (!query_chrom.empty() && var.chrom != query_chrom) {
+        throw std::out_of_range("variant not on required chrom");
+      }
+    }
+    if (var.pos > query_end) {
+      throw std::out_of_range("variant out of bounds");
+    }
+    return var;
+  } catch (const std::out_of_range &) {
+    empty_region = true;
+    throw;
   }
-  if (var.pos > query_end) {
-    throw std::out_of_range("variant out of bounds");
-  }
-  return var;
 }
 
 /// @brief define genome region to extract variants from

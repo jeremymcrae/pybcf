@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from pybcf import BcfReader
-from pysam import VariantFile
+from pysam import VariantFile, tabix_index
 
 class TestIndexed(unittest.TestCase):
     ''' class to make sure BcfReader works correctly
@@ -262,4 +262,33 @@ class TestIndexed(unittest.TestCase):
             self.assertEqual(len(list(bcf.fetch('chr1', 1, 3))), 3)
             # chr3 has contig_id >= indices.size() in this truncated CSI
             self.assertEqual(list(bcf.fetch('chr3')), [])
+
+    def test_fetch_spanning_deletion_and_none_bounds(self):
+        ''' check fetch includes upstream spanning deletions and supports start=None/stop=None
+        '''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bcf_path = Path(tmpdir) / 'spanning.bcf'
+            with VariantFile(bcf_path, 'wb') as out:
+                out.header.contigs.add('chr1', length=1000000)
+                # Deletion spanning 100..40099 (crosses 16 kb bin boundaries)
+                out.write(out.new_record(contig='chr1', start=99, alleles=('A' * 40000, 'A')))
+                # Short SNP at 200 (after deletion start, but upstream of 36000)
+                out.write(out.new_record(contig='chr1', start=199, alleles=('C', 'G')))
+                # SNP inside 36000..39000
+                out.write(out.new_record(contig='chr1', start=36999, alleles=('G', 'T')))
+                # SNP at exact 16 kb bin boundary (0-based 49152)
+                out.write(out.new_record(contig='chr1', start=49152, alleles=('T', 'A')))
+            tabix_index(str(bcf_path), preset='bcf', csi=True, force=True)
+
+            vcf = VariantFile(bcf_path)
+            bcf = BcfReader(bcf_path)
+
+            for s, e in [(36000, 39000), (49153, 50000)]:
+                expected = [v.pos for v in vcf.fetch('chr1', s - 1, e)]
+                actual = [v.pos for v in bcf.fetch('chr1', s, e)]
+                self.assertEqual(actual, expected)
+
+            self.assertEqual([v.pos for v in bcf.fetch('chr1', None, None)], [100, 200, 37000, 49153])
+            self.assertEqual([v.pos for v in bcf.fetch('chr1', 36000, None)], [100, 37000, 49153])
+            self.assertEqual([v.pos for v in bcf.fetch('chr1', None, 300)], [100, 200])
 

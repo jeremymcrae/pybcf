@@ -20,7 +20,6 @@ namespace bcf {
 class Variant {
   std::vector<char> buf;
   std::int32_t contig_idx=0;
-  std::int32_t rlen=0;
   std::uint32_t n_alleles=0;
   std::uint32_t n_info=0;
   std::uint32_t n_fmt=0;
@@ -31,6 +30,7 @@ public:
   
   std::string chrom="";
   std::int32_t pos=0;
+  std::int32_t rlen=0;
   std::string ref="";
   std::vector<std::string> alts;
   float qual=std::nanf("1");

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from libcpp cimport bool
 from libc.math cimport isnan
-from libc.stdint cimport int8_t, uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN
+from libc.stdint cimport int8_t, uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
@@ -425,7 +425,7 @@ cdef class BcfReader:
         '''
         return self.header.samples
 
-    def fetch(self, chrom, int32_t start=1, int32_t stop=2**29):
+    def fetch(self, chrom, start=None, stop=None):
         ''' fetches all variants within a genomic region
 
         Args:
@@ -439,11 +439,9 @@ cdef class BcfReader:
         if not self.is_open:
             raise ValueError('bcf is closed')
 
-        try:
-            self.thisptr.set_region(chrom.encode('utf8'), start, stop)
-        except IndexError:
-            pass
-
+        cdef int32_t region_start = 1 if start is None else start
+        cdef int32_t region_stop = INT32_MAX if stop is None else stop
+        self.thisptr.set_region(chrom.encode('utf8'), region_start, region_stop)
         return iter(self)
 
     def __enter__(self):

@@ -1,6 +1,5 @@
 
 from pathlib import Path
-import platform
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import subprocess
@@ -17,12 +16,6 @@ elif sys.platform == "darwin":
     EXTRA_COMPILE_ARGS += ["-stdlib=libc++", "-std=c++11", "-O2"]
 elif sys.platform == "win32":
     EXTRA_COMPILE_ARGS += ['/std:c++14', '/O2']
-
-if platform.machine() == 'x86_64' and sys.platform == "linux":
-    EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']
-
-if platform.machine() == 'aarch64' and sys.platform == "linux":
-    EXTRA_COMPILE_ARGS += ['-flax-vector-conversions']
 
 def build_zlib(build_dir):
     ''' compile zlib-ng into a static library to link with

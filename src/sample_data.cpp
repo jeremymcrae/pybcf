@@ -1,11 +1,12 @@
 #include <climits>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
 #include "sample_data.h"
 #include "types.h"
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   #include <immintrin.h>
 #endif
 
@@ -20,8 +21,6 @@ SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t 
   if (len == 0) {
     return;
   }
-  phase.assign(n_samples, 0);
-  missing.assign(n_samples, 0);
 
   // read the sample data into a buffer, but don't parse until required
   buf.resize(len);
@@ -90,50 +89,122 @@ std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
   throw std::invalid_argument("unsupported FORMAT integer byte width: " + std::to_string(type.type_size));
 }
 
-#if defined(__x86_64__)
-/// @brief convert vectorized 8-bit missing values to the 32-bit form
-/// @param data 128-bit register containing 4 32-bit values
-/// @return register where the missing values have been converted from their
-///         8-bit encoding to a standard 32-bit encoding
-static inline __m128i missing_8bit_to_32bit(__m128i data) {
-  // 8-bit missing values were 0x80 (-128), sign-extended to 0xffffff80
-  const __m128i missing_8bit = _mm_set1_epi32(-128);
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+/// @brief replace sign-extended narrow missing sentinel with INT32_MIN
+__attribute__((target("avx2")))
+static inline __m128i replace_missing_epi32(__m128i data, std::int32_t old_missing) {
+  const __m128i missing_old = _mm_set1_epi32(old_missing);
   const __m128i missing_32bit = _mm_set1_epi32(INT32_MIN);
+  __m128i mask = _mm_cmpeq_epi32(data, missing_old);
+  return _mm_blendv_epi8(data, missing_32bit, mask);
+}
 
-  __m128i mask = _mm_cmpeq_epi32(data, missing_8bit);
-  data = _mm_andnot_si128(mask, data);
-  return _mm_or_si128(data, _mm_and_si128(missing_32bit, mask));
+__attribute__((target("avx2")))
+static std::uint64_t parse_8bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
+  const __m256i missing = _mm256_set1_epi8(static_cast<char>(0x80));
+  const __m256i not_recorded = _mm256_set1_epi8(static_cast<char>(0x81));
+
+  std::uint64_t n = 0;
+  for (; n + 32 <= max_n; n += 32) {
+    __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n));
+    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi8(data, not_recorded));
+
+    __m128i low = _mm256_castsi256_si128(data);
+    __m128i hi = _mm256_extracti128_si256(data, 1);
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), replace_missing_epi32(_mm_cvtepi8_epi32(low), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 16]), replace_missing_epi32(_mm_cvtepi8_epi32(hi), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 20]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 24]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)), -128));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 28]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)), -128));
+  }
+  return n;
+}
+
+__attribute__((target("avx2")))
+static std::uint64_t parse_16bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
+  const __m256i missing = _mm256_set1_epi16(static_cast<short>(0x8000));
+  const __m256i not_recorded = _mm256_set1_epi16(static_cast<short>(0x8001));
+
+  std::uint64_t n = 0;
+  for (; n + 16 <= max_n; n += 16) {
+    __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 2));
+    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi16(data, not_recorded));
+
+    __m128i low = _mm256_castsi256_si128(data);
+    __m128i hi = _mm256_extracti128_si256(data, 1);
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), replace_missing_epi32(_mm_cvtepi16_epi32(low), -32768));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), replace_missing_epi32(_mm_cvtepi16_epi32(_mm_bsrli_si128(low, 8)), -32768));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), replace_missing_epi32(_mm_cvtepi16_epi32(hi), -32768));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), replace_missing_epi32(_mm_cvtepi16_epi32(_mm_bsrli_si128(hi, 8)), -32768));
+  }
+  return n;
+}
+
+__attribute__((target("avx2")))
+static std::uint64_t parse_32bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
+  const __m256i missing = _mm256_set1_epi32(INT32_MIN);
+  const __m256i not_recorded = _mm256_set1_epi32(INT32_MIN + 1);
+
+  std::uint64_t n = 0;
+  for (; n + 8 <= max_n; n += 8) {
+    __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 4));
+    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi32(data, not_recorded));
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(&dst[n]), data);
+  }
+  return n;
+}
+
+__attribute__((target("avx2")))
+static std::uint64_t parse_geno_avx2(const char * src, std::int32_t * dst, std::uint8_t * phase, std::uint64_t max_n) {
+  const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
+  const __m256i sub = _mm256_set1_epi8(1);
+  const __m256i miss_byte = _mm256_set1_epi8(static_cast<char>(0x80));
+  const __m256i eov_byte = _mm256_set1_epi8(static_cast<char>(0x81));
+  const __m128i one = _mm_set1_epi8(1);
+  const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
+  const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
+
+  std::uint64_t n = 0;
+  for (; n + 32 <= max_n; n += 32) {
+    __m256i initial = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n));
+
+    __m256i geno = _mm256_and_si256(initial, mask_geno);
+    geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
+
+    // set BCF missing (0x80) and end-of-vector (0x81) entries to -1 (0xff)
+    __m256i missed = _mm256_or_si256(_mm256_cmpeq_epi8(initial, miss_byte),
+                                     _mm256_cmpeq_epi8(initial, eov_byte));
+    geno = _mm256_or_si256(geno, missed);
+
+    __m128i low = _mm256_castsi256_si128(geno);
+    __m128i hi = _mm256_extracti128_si256(geno, 1);
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), _mm_cvtepi8_epi32(low));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 16]), _mm_cvtepi8_epi32(hi));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 20]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 24]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 28]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)));
+
+    // sample phasing from each sample's second allele (odd bytes of initial)
+    __m128i init_lo = _mm256_castsi256_si128(initial);
+    __m128i init_hi = _mm256_extracti128_si256(initial, 1);
+    __m128i second_alleles = _mm_or_si128(_mm_shuffle_epi8(init_lo, odd_lo),
+                                          _mm_shuffle_epi8(init_hi, odd_hi));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(&phase[n >> 1]), _mm_and_si128(second_alleles, one));
+  }
+  return n;
 }
 #elif defined(__aarch64__)
-/// @brief convert vectorized 8-bit missing values to the 32-bit form
-static inline int32x4_t missing_8bit_to_32bit(int32x4_t data) {
-  const int32x4_t missing_8bit = vdupq_n_s32(-128);
+/// @brief replace sign-extended narrow missing sentinel with INT32_MIN
+static inline int32x4_t replace_missing_s32(int32x4_t data, std::int32_t old_missing) {
+  const int32x4_t missing_old = vdupq_n_s32(old_missing);
   const int32x4_t missing_32bit = vdupq_n_s32(INT32_MIN);
-
-  uint32x4_t mask = vceqq_s32(data, missing_8bit);
-  return vbslq_s32(mask, missing_32bit, data);
-}
-#endif
-
-#if defined(__x86_64__)
-/// @brief convert vectorized 16-bit missing values to the 32-bit form
-static inline __m128i missing_16bit_to_32bit(__m128i data) {
-  // 16-bit missing values were 0x8000 (-32768), sign-extended to 0xffff8000
-  const __m128i missing_16bit = _mm_set1_epi32(-32768);
-  const __m128i missing_32bit = _mm_set1_epi32(INT32_MIN);
-
-  __m128i mask = _mm_cmpeq_epi32(data, missing_16bit);
-  data = _mm_andnot_si128(mask, data);
-  return _mm_or_si128(data, _mm_and_si128(missing_32bit, mask));
-}
-#elif defined(__aarch64__)
-/// @brief convert vectorized 16-bit missing values to the 32-bit form
-static inline int32x4_t missing_16bit_to_32bit(int32x4_t data) {
-  const int32x4_t missing_16bit = vdupq_n_s32(-32768);
-  const int32x4_t missing_32bit = vdupq_n_s32(INT32_MIN);
-
-  uint32x4_t mask = vceqq_s32(data, missing_16bit);
-  return vbslq_s32(mask, missing_32bit, data);
+  return vbslq_s32(vceqq_s32(data, missing_old), missing_32bit, data);
 }
 #endif
 
@@ -150,30 +221,9 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    const __m256i missing = _mm256_set1_epi8(static_cast<char>(0x80));
-    const __m256i not_recorded = _mm256_set1_epi8(static_cast<char>(0x81));
-
-    for (; n + 32 <= max_n; n += 32) {
-      __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(buf.data() + offset + n));
-
-      // replace the not_recorded values with standard missing values
-      __m256i mask = _mm256_cmpeq_epi8(data, not_recorded);
-      data = _mm256_or_si256(_mm256_andnot_si256(mask, data), _mm256_and_si256(missing, mask));
-
-      // widen 8-bit ints to 32-bit, standardize missing value, and store
-      __m128i low = _mm256_castsi256_si128(data);
-      __m128i hi = _mm256_extracti128_si256(data, 1);
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(low)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 4]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 8]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 12]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 16]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(hi)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 20]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 24]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 28]), missing_8bit_to_32bit(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12))));
-    }
+    n = parse_8bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int8x16_t missing = vdupq_n_s8(INT8_MIN);
@@ -181,16 +231,15 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
 
   for (; n + 16 <= max_n; n += 16) {
     int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(buf.data() + offset + n));
-    uint8x16_t mask = vceqq_s8(data, not_recorded);
-    data = vbslq_s8(mask, missing, data);
+    data = vbslq_s8(vceqq_s8(data, not_recorded), missing, data);
 
     int16x8_t wider = vmovl_s8(vget_low_s8(data));
-    vst1q_s32(&vals[n], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 4], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n], replace_missing_s32(vmovl_s16(vget_low_s16(wider)), -128));
+    vst1q_s32(&vals[n + 4], replace_missing_s32(vmovl_s16(vget_high_s16(wider)), -128));
 
     wider = vmovl_s8(vget_high_s8(data));
-    vst1q_s32(&vals[n + 8], missing_8bit_to_32bit(vmovl_s16(vget_low_s16(wider))));
-    vst1q_s32(&vals[n + 12], missing_8bit_to_32bit(vmovl_s16(vget_high_s16(wider))));
+    vst1q_s32(&vals[n + 8], replace_missing_s32(vmovl_s16(vget_low_s16(wider)), -128));
+    vst1q_s32(&vals[n + 12], replace_missing_s32(vmovl_s16(vget_high_s16(wider)), -128));
   }
 #endif
   offset += static_cast<std::uint32_t>(n);
@@ -213,24 +262,9 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    const __m256i missing = _mm256_set1_epi16(static_cast<short>(0x8000));
-    const __m256i not_recorded = _mm256_set1_epi16(static_cast<short>(0x8001));
-
-    for (; n + 16 <= max_n; n += 16) {
-      __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(buf.data() + offset + n * 2));
-
-      __m256i mask = _mm256_cmpeq_epi16(data, not_recorded);
-      data = _mm256_or_si256(_mm256_andnot_si256(mask, data), _mm256_and_si256(missing, mask));
-
-      __m128i low = _mm256_castsi256_si128(data);
-      __m128i hi = _mm256_extracti128_si256(data, 1);
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n]), missing_16bit_to_32bit(_mm_cvtepi16_epi32(low)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 4]), missing_16bit_to_32bit(_mm_cvtepi16_epi32(_mm_bsrli_si128(low, 8))));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 8]), missing_16bit_to_32bit(_mm_cvtepi16_epi32(hi)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 12]), missing_16bit_to_32bit(_mm_cvtepi16_epi32(_mm_bsrli_si128(hi, 8))));
-    }
+    n = parse_16bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int16x8_t missing = vdupq_n_s16(INT16_MIN);
@@ -238,11 +272,10 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
 
   for (; n + 8 <= max_n; n += 8) {
     int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(buf.data() + offset + n * 2));
-    uint16x8_t mask = vceqq_s16(data, not_recorded);
-    data = vbslq_s16(mask, missing, data);
+    data = vbslq_s16(vceqq_s16(data, not_recorded), missing, data);
 
-    vst1q_s32(&vals[n], missing_16bit_to_32bit(vmovl_s16(vget_low_s16(data))));
-    vst1q_s32(&vals[n + 4], missing_16bit_to_32bit(vmovl_s16(vget_high_s16(data))));
+    vst1q_s32(&vals[n], replace_missing_s32(vmovl_s16(vget_low_s16(data)), -32768));
+    vst1q_s32(&vals[n + 4], replace_missing_s32(vmovl_s16(vget_high_s16(data)), -32768));
   }
 #endif
   offset += static_cast<std::uint32_t>(n * 2);
@@ -265,18 +298,9 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    const __m256i missing = _mm256_set1_epi32(INT32_MIN);
-    const __m256i not_recorded = _mm256_set1_epi32(INT32_MIN + 1);
-    for (; n + 8 <= max_n; n += 8) {
-      __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(buf.data() + offset + n * 4));
-
-      __m256i mask = _mm256_cmpeq_epi32(data, not_recorded);
-      data = _mm256_or_si256(_mm256_andnot_si256(mask, data), _mm256_and_si256(missing, mask));
-
-      _mm256_storeu_si256(reinterpret_cast<__m256i *>(&vals[n]), data);
-    }
+    n = parse_32bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int32x4_t missing = vdupq_n_s32(INT32_MIN);
@@ -284,9 +308,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
 
   for (; n + 4 <= max_n; n += 4) {
     int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(buf.data() + offset + n * 4));
-    uint32x4_t mask = vceqq_s32(data, not_recorded);
-    data = vbslq_s32(mask, missing, data);
-
+    data = vbslq_s32(vceqq_s32(data, not_recorded), missing, data);
     vst1q_s32(&vals[n], data);
   }
 #endif
@@ -305,6 +327,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
 std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
   // confirm we checked sample phasing if we look at the genotype data
   phase_checked = true;
+  phase.assign(n_samples, 0);
 
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   std::vector<std::int32_t> vals(max_n);
@@ -317,61 +340,14 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
-#if defined(__x86_64__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2") && (type.n_vals == 2) && (type.type_size == 1)) {
-    const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
-    const __m256i sub = _mm256_set1_epi8(1);
-    const __m256i miss_byte = _mm256_set1_epi8(static_cast<char>(0x80));
-    const __m256i eov_byte = _mm256_set1_epi8(static_cast<char>(0x81));
-    const __m128i neg_one = _mm_set1_epi8(-1);
-    const __m128i one = _mm_set1_epi8(1);
-    const __m128i even_lo = _mm_setr_epi8(0, 2, 4, 6, 8, 10, 12, 14, -1, -1, -1, -1, -1, -1, -1, -1);
-    const __m128i even_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 0, 2, 4, 6, 8, 10, 12, 14);
-    const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
-    const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
-
-    for (; n + 32 <= max_n; n += 32) {
-      __m256i initial = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(buf.data() + offset + n));
-
-      __m256i geno = _mm256_and_si256(initial, mask_geno);
-      geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
-
-      // set BCF missing (0x80) and end-of-vector (0x81) entries to -1 (0xff)
-      __m256i missed = _mm256_or_si256(_mm256_cmpeq_epi8(initial, miss_byte),
-                                       _mm256_cmpeq_epi8(initial, eov_byte));
-      geno = _mm256_or_si256(geno, missed);
-
-      __m128i low = _mm256_castsi256_si128(geno);
-      __m128i hi = _mm256_extracti128_si256(geno, 1);
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n]), _mm_cvtepi8_epi32(low));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 4]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 8]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 12]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 16]), _mm_cvtepi8_epi32(hi));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 20]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 24]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)));
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&vals[n + 28]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)));
-
-      // sample missingness from each sample's first allele (even bytes)
-      __m128i first_alleles = _mm_or_si128(_mm_shuffle_epi8(low, even_lo),
-                                           _mm_shuffle_epi8(hi, even_hi));
-      __m128i is_miss = _mm_and_si128(_mm_cmpeq_epi8(first_alleles, neg_one), one);
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&missing[n >> 1]), is_miss);
-
-      // sample phasing from each sample's second allele (odd bytes of initial)
-      __m128i init_lo = _mm256_castsi256_si128(initial);
-      __m128i init_hi = _mm256_extracti128_si256(initial, 1);
-      __m128i second_alleles = _mm_or_si128(_mm_shuffle_epi8(init_lo, odd_lo),
-                                            _mm_shuffle_epi8(init_hi, odd_hi));
-      __m128i phase128 = _mm_and_si128(second_alleles, one);
-      _mm_storeu_si128(reinterpret_cast<__m128i *>(&phase[n >> 1]), phase128);
-    }
+    n = parse_geno_avx2(buf.data() + offset, vals.data(), phase.data(), max_n);
   }
 #elif defined(__aarch64__)
   if ((type.type_size == 1) && (type.n_vals == 2)) {
     const uint8x16_t sub = vdupq_n_u8(1);
     const uint8x16_t miss_thresh = vdupq_n_u8(0x80);
-    const uint8x8_t all_ones = vdup_n_u8(0xff);
     const uint8x8_t one = vdup_n_u8(1);
 
     for (; n + 16 <= max_n; n += 16) {
@@ -390,15 +366,9 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
       vst1q_s32(&vals[n + 8], vmovl_s16(vget_low_s16(wider)));
       vst1q_s32(&vals[n + 12], vmovl_s16(vget_high_s16(wider)));
 
-      // sample missingness from even bytes
-      uint8x8_t first_alleles = vmovn_u16(vreinterpretq_u16_s8(geno));
-      uint8x8_t is_miss = vand_u8(vceq_u8(first_alleles, all_ones), one);
-      vst1_u8(&missing[n >> 1], is_miss);
-
       // sample phasing from odd bytes
       uint8x8_t second_alleles = vshrn_n_u16(vreinterpretq_u16_u8(initial), 8);
-      uint8x8_t is_phased = vand_u8(second_alleles, one);
-      vst1_u8(&phase[n >> 1], is_phased);
+      vst1_u8(&phase[n >> 1], vand_u8(second_alleles, one));
     }
   }
 #endif
@@ -417,9 +387,6 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
         }
         vals[idx] = (raw >> 1) - 1;
       }
-      if (i == 0) {
-        missing[s] = static_cast<std::uint8_t>(vals[idx] == -1);
-      }
       idx++;
     }
     phase[s] = is_phased;
@@ -436,12 +403,18 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
   if (max_n == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * 4 > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf.size()) {
     throw std::out_of_range("FORMAT float data exceeds buffer");
   }
-  std::uint32_t offset = type.offset;
+  const char * src = buf.data() + type.offset;
+  std::memcpy(vals.data(), src, max_n * sizeof(float));
+  const float qnan = std::nanf("");
   for (std::uint64_t n = 0; n < max_n; n++) {
-    vals[n] = parse_float(buf.data(), buf.size(), offset);
+    std::uint32_t bits = 0;
+    std::memcpy(&bits, src + n * sizeof(float), sizeof(bits));
+    if (is_bcf_float_missing(bits)) {
+      vals[n] = qnan;
+    }
   }
   return vals;
 }

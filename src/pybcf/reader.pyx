@@ -66,7 +66,6 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         uint32_t n_samples
         bool phase_checked
         vector[uint8_t] phase
-        vector[uint8_t] missing
 
 cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:

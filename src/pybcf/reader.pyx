@@ -47,6 +47,7 @@ cdef extern from 'info.h' namespace 'bcf':
         info_string
         info_vector_float
         info_vector_int
+        info_vector_string
 
     cdef struct InfoType:
         InfoKind type
@@ -193,6 +194,8 @@ cdef class BcfInfo:
             return None if i_val == INT32_MIN else i_val
         elif datatype == info_string:
             return self.thisptr.get_string(offset).decode('utf8')
+        elif datatype == info_vector_string:
+            return tuple(self.thisptr.get_string(offset).decode('utf8').split(','))
         elif datatype == info_vector_float:
             return tuple(None if isnan(x) else x for x in self.thisptr.get_floats(offset))
         elif datatype == info_vector_int:

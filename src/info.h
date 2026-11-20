@@ -18,6 +18,7 @@ enum InfoKind : std::int8_t {
   info_string = 2,
   info_vector_float = 3,
   info_vector_int = 4,
+  info_vector_string = 5,
 };
 
 struct InfoType {

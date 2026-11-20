@@ -404,9 +404,11 @@ class TestBcfReader(unittest.TestCase):
             '##INFO=<ID=IV,Number=.,Type=Integer,Description="vec int">\n'
             '##INFO=<ID=FS,Number=1,Type=Float,Description="scalar float">\n'
             '##INFO=<ID=FV,Number=.,Type=Float,Description="vec float">\n'
+            '##INFO=<ID=SS,Number=1,Type=String,Description="scalar str">\n'
+            '##INFO=<ID=SV,Number=.,Type=String,Description="vec str">\n'
             '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
-            'chr1\t10\t.\tA\tG\t.\t.\tIS=.;IV=1,.,3;FS=.;FV=1.5,.,2.5\n'
-            'chr1\t20\t.\tC\tT\t.\t.\tIV=5;FV=3.5\n'
+            'chr1\t10\t.\tA\tG\t.\t.\tIS=.;IV=1,.,3;FS=.;FV=1.5,.,2.5;SS=hello;SV=a,b,c\n'
+            'chr1\t20\t.\tC\tT\t.\t.\tIV=5;FV=3.5;SS=.;SV=only_one\n'
         )
         with tempfile.TemporaryDirectory() as tmpdir:
             vcf_path = Path(tmpdir) / 'missing_info.vcf'

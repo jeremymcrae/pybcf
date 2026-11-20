@@ -49,7 +49,8 @@ void Info::parse() {
         keys[field.id] = {info_flag, 0};
         break;
       case char_:
-        keys[field.id] = {info_string, static_cast<std::uint32_t>(strings.size())};
+        keys[field.id] = {field.is_list ? info_vector_string : info_string,
+                          static_cast<std::uint32_t>(strings.size())};
         strings.push_back(parse_string(buf.data(), buf.size(), buf_idx, type_val.n_vals));
         break;
       case float_:

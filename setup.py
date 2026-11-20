@@ -1,73 +1,72 @@
 
 from pathlib import Path
-from setuptools import setup
+import platform
+from setuptools import setup, Extension
+from setuptools.command.build_ext import build_ext
 import subprocess
 import sys
-import os
-import platform
 
-from distutils.core import Extension
 from Cython.Build import cythonize
 
-EXTRA_LINK_ARGS = []
+ROOT = Path(__file__).resolve().parent
+
 EXTRA_COMPILE_ARGS = []
 if sys.platform == 'linux':
-    EXTRA_COMPILE_ARGS = ['-std=c++11', '-I/usr/include', '-O2']
+    EXTRA_COMPILE_ARGS += ['-std=c++11', '-O2']
 elif sys.platform == "darwin":
-    EXTRA_COMPILE_ARGS += [
-        "-stdlib=libc++",
-        "-std=c++11",
-        '-O2',
-        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1",
-        "-I/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include",
-        ]
-    EXTRA_LINK_ARGS += [
-        "-L/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib",
-        ]
+    EXTRA_COMPILE_ARGS += ["-stdlib=libc++", "-std=c++11", "-O2"]
 elif sys.platform == "win32":
     EXTRA_COMPILE_ARGS += ['/std:c++14', '/O2']
 
-if platform.machine() == 'x86_64' and sys.platform != "darwin":
+if platform.machine() == 'x86_64' and sys.platform == "linux":
     EXTRA_COMPILE_ARGS += ['-mavx', '-mavx2']
 
 if platform.machine() == 'aarch64' and sys.platform == "linux":
     EXTRA_COMPILE_ARGS += ['-flax-vector-conversions']
 
-def build_zlib():
-    ''' compile zlib code to object files for linking
+def build_zlib(build_dir):
+    ''' compile zlib-ng into a static library to link with
+    
+    Args:
+        build_dir: folder to build in, which also gets the generated zlib.h
     
     Returns:
-        list of paths to compiled object code
+        list holding the path to the static library
     '''
-    cur_dir = Path.cwd()
-    source_dir = cur_dir / 'src' / 'zlib-ng'
-    build_dir = cur_dir / 'zlib_build'
-    build_dir.mkdir(exist_ok=True)
-    os.chdir(build_dir)
-    
+    source_dir = ROOT / 'src' / 'zlib-ng'
     cmd = ['cmake', '-S', source_dir, '-B', build_dir,
         '-DZLIB_COMPAT=ON',
         '-DZLIB_ENABLE_TESTS=OFF',
         '-DBUILD_SHARED_LIBS=OFF',
-        '-DCMAKE_C_FLAGS="-fPIC"',
+        '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
     ]
-    subprocess.run(cmd)
-    subprocess.run(['cmake', '--build', build_dir, '-v', '--config', 'Release'])
-    os.chdir(cur_dir)
+    subprocess.run(cmd, check=True)
+    subprocess.run(['cmake', '--build', build_dir, '-v', '--config', 'Release'],
+                   check=True)
     
-    objs = [str(build_dir / 'libz.a')]
     if sys.platform == 'win32':
-        objs = [str(build_dir / 'Release' / 'zlibstatic.lib'),
-                ]
+        return [str(build_dir / 'Release' / 'zlibstatic.lib')]
+    return [str(build_dir / 'libz.a')]
+
+class build_ext_subclass(build_ext):
+    ''' link the vendored zlib-ng into the extension module
     
-    return str(build_dir), objs
+    zlib-ng is only needed to link the extension module, so compiling it here
+    (rather than at import) keeps metadata-only commands such as egg_info and
+    sdist from invoking cmake.
+    '''
+    def build_extensions(self):
+        # built alongside the other temporary files, rather than in the source tree
+        zlib_dir = Path(self.build_temp) / 'zlib-ng'
+        zlib = build_zlib(zlib_dir)
+        for ext in self.extensions:
+            ext.include_dirs.append(str(zlib_dir))
+            ext.extra_objects = zlib
+        super().build_extensions()
 
-include_dir, zlib  = build_zlib()
-
-ext = cythonize([
+extensions = [
     Extension('pybcf.reader',
         extra_compile_args=EXTRA_COMPILE_ARGS,
-        extra_link_args=EXTRA_LINK_ARGS,
         sources=['src/pybcf/reader.pyx',
             'src/gzstream.cpp',
             'src/bcf.cpp',
@@ -76,12 +75,12 @@ ext = cythonize([
             'src/info.cpp',
             'src/sample_data.cpp',
             'src/variant.cpp'],
-        extra_objects=zlib,
-        include_dirs=['src', include_dir],
+        include_dirs=['src'],
         language='c++'),
-    ])
+    ]
 
 setup(
     package_dir={'': 'src'},
-    ext_modules=ext,
+    ext_modules=cythonize(extensions),
+    cmdclass={'build_ext': build_ext_subclass},
     )

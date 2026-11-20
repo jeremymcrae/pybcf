@@ -42,6 +42,7 @@ cdef extern from 'header.h' namespace 'bcf':
 
 cdef extern from 'info.h' namespace 'bcf':
     cdef enum InfoKind:
+        info_missing
         info_flag
         info_scalar_float
         info_scalar_int
@@ -52,7 +53,9 @@ cdef extern from 'info.h' namespace 'bcf':
 
     cdef struct InfoType:
         InfoKind type
+        uint8_t type_size
         uint32_t offset
+        uint32_t n_vals
 
     cdef cppclass Info:
         # declare class constructor and methods
@@ -60,12 +63,12 @@ cdef extern from 'info.h' namespace 'bcf':
         size_t size() except +
         vector[string] get_keys() except +
         bool get_type(const string &, InfoType &) except +
-        int32_t get_int(uint32_t offset) except +
-        float get_float(uint32_t offset) except +
-        string get_string(uint32_t offset) except +
+        int32_t get_int(const InfoType &) except +
+        float get_float(const InfoType &) except +
+        string get_string(const InfoType &) except +
 
-        vector[int32_t] get_ints(uint32_t offset) except +
-        vector[float] get_floats(uint32_t offset) except +
+        vector[int32_t] get_ints(const InfoType &) except +
+        vector[float] get_floats(const InfoType &) except +
 
 cdef extern from 'sample_data.h' namespace 'bcf':
     cdef struct FormatType:
@@ -183,26 +186,27 @@ cdef class BcfInfo:
 
     cdef _decode_value(self, InfoType info_type):
         cdef InfoKind datatype = info_type.type
-        cdef uint32_t offset = info_type.offset
         cdef float f_val
         cdef int32_t i_val
 
-        if datatype == info_flag:
+        if datatype == info_missing:
+            return None
+        elif datatype == info_flag:
             return True
         elif datatype == info_scalar_float:
-            f_val = self.thisptr.get_float(offset)
+            f_val = self.thisptr.get_float(info_type)
             return None if isnan(f_val) else f_val
         elif datatype == info_scalar_int:
-            i_val = self.thisptr.get_int(offset)
+            i_val = self.thisptr.get_int(info_type)
             return None if i_val == INT32_MIN else i_val
         elif datatype == info_string:
-            return self.thisptr.get_string(offset).decode('utf8')
+            return self.thisptr.get_string(info_type).decode('utf8')
         elif datatype == info_vector_string:
-            return tuple(self.thisptr.get_string(offset).decode('utf8').split(','))
+            return tuple(self.thisptr.get_string(info_type).decode('utf8').split(','))
         elif datatype == info_vector_float:
-            return tuple(None if isnan(x) else x for x in self.thisptr.get_floats(offset))
+            return tuple(None if isnan(x) else x for x in self.thisptr.get_floats(info_type))
         elif datatype == info_vector_int:
-            return tuple(None if x == INT32_MIN else x for x in self.thisptr.get_ints(offset))
+            return tuple(None if x == INT32_MIN else x for x in self.thisptr.get_ints(info_type))
 
     def get(self, key, default=None):
         cdef InfoType info_type
@@ -260,7 +264,7 @@ cdef class BcfSampleData:
         cdef vector[float] v_float
         if fmt_type.data_type in (int8, int16, int32):
             if n_vals == 0:
-                return np.empty(shape, dtype=float)
+                return np.full(shape, np.nan, dtype=float)
             v_int = self.thisptr.get_ints(fmt_type)
             arr = np.asarray(<int32_t [:n_vals]>&v_int[0]).reshape(shape)
 
@@ -271,7 +275,7 @@ cdef class BcfSampleData:
             return arr
         elif fmt_type.data_type == float_:
             if n_vals == 0:
-                return np.empty(shape, dtype=np.float32)
+                return np.full(shape, np.nan, dtype=np.float32)
             v_float = self.thisptr.get_floats(fmt_type)
             return np.asarray(<float [:n_vals]>&v_float[0]).reshape(shape).copy()
         elif fmt_type.data_type == char_:

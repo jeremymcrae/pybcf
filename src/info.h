@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "header.h"
@@ -12,6 +11,7 @@
 namespace bcf {
 
 enum InfoKind : std::int8_t {
+  info_missing = -2,
   info_flag = -1,
   info_scalar_float = 0,
   info_scalar_int = 1,
@@ -23,26 +23,24 @@ enum InfoKind : std::int8_t {
 
 struct InfoType {
   InfoKind type;
+  std::uint8_t type_size;
   std::uint32_t offset;
+  std::uint32_t n_vals;
+};
+
+struct NamedInfo {
+  std::string key;
+  InfoType info;
 };
 
 class Info {
-  std::unordered_map<std::string, InfoType> keys;
-  std::vector<std::string> key_order;
-
   const Header * header = nullptr;
   bool is_parsed = false;
   std::uint32_t n_info = 0;
+  std::vector<NamedInfo> fields;
   std::vector<char> buf;
 
   void parse();
-
-  std::vector<float> scalar_floats;
-  std::vector<std::int32_t> scalar_ints;
-  std::vector<std::string> strings;
-
-  std::vector<std::vector<float>> vector_floats;
-  std::vector<std::vector<std::int32_t>> vector_ints;
 public:
   Info(const char * data, std::size_t len, const Header * header, std::uint32_t n_info)
       : header(header), n_info(n_info) {
@@ -51,18 +49,18 @@ public:
     }
   }
   Info() = default;
-  const std::vector<std::string> & get_keys();
+  std::vector<std::string> get_keys();
   std::size_t size();
   bool get_type(const std::string & key, InfoType & out);
 
-  std::int32_t get_int(std::uint32_t offset) const { return scalar_ints.at(offset); }
-  float get_float(std::uint32_t offset) const { return scalar_floats.at(offset); }
-  const std::string & get_string(std::uint32_t offset) const { return strings.at(offset); }
+  std::int32_t get_int(const InfoType & type) const;
+  float get_float(const InfoType & type) const;
+  std::string get_string(const InfoType & type) const;
 
-  const std::vector<std::int32_t> & get_ints(std::uint32_t offset) const { return vector_ints.at(offset); }
-  const std::vector<float> & get_floats(std::uint32_t offset) const { return vector_floats.at(offset); }
+  std::vector<std::int32_t> get_ints(const InfoType & type) const;
+  std::vector<float> get_floats(const InfoType & type) const;
 };
 
-} // namespace
+} // namespace bcf
 
 #endif

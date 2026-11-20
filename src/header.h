@@ -11,6 +11,7 @@ namespace bcf {
 struct InfoField {
   std::string id;
   bool is_list;
+  bool is_flag;
 };
 
 class Header {

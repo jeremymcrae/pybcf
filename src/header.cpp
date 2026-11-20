@@ -154,7 +154,8 @@ Header::Header(const std::string & text) {
       if (kind == "INFO") {
         const std::string & num = data["Number"];
         bool is_list = !num.empty() && num != "1" && num != "0";
-        info[idx] = {id, is_list};
+        bool is_flag = data["Type"] == "Flag" || num == "0";
+        info[idx] = {id, is_list, is_flag};
       } else if (kind == "FORMAT") {
         format[idx] = id;
       } else if (kind == "FILTER" && id != "PASS") {

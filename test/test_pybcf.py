@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 import numpy as np
-from pysam import VariantFile
+from pysam import BGZFile, VariantFile
 from pybcf import BcfReader
 
 def get_pysam_probs(var, alt_idx):
@@ -457,6 +457,62 @@ class TestBcfReader(unittest.TestCase):
                 for field in var_pysam.info:
                     self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
 
+            # Check BCFv2.2 n_vals=0 missing/empty encodings, EOV truncation in INFO, and 0-len FORMAT fields
+            header_bytes = (
+                '##fileformat=VCFv4.2\n'
+                '##FILTER=<ID=PASS,Description="All filters passed",IDX=0>\n'
+                '##contig=<ID=chr1,length=1000,IDX=0>\n'
+                '##INFO=<ID=FLG,Number=0,Type=Flag,Description="f",IDX=1>\n'
+                '##INFO=<ID=IS,Number=1,Type=Integer,Description="is",IDX=2>\n'
+                '##INFO=<ID=IV,Number=.,Type=Integer,Description="iv",IDX=3>\n'
+                '##INFO=<ID=FS,Number=1,Type=Float,Description="fs",IDX=4>\n'
+                '##INFO=<ID=FV,Number=.,Type=Float,Description="fv",IDX=5>\n'
+                '##INFO=<ID=SS,Number=1,Type=String,Description="ss",IDX=6>\n'
+                '##INFO=<ID=SV,Number=.,Type=String,Description="sv",IDX=7>\n'
+                '##INFO=<ID=IV_EOV,Number=.,Type=Integer,Description="iv eov",IDX=8>\n'
+                '##INFO=<ID=FV_EOV,Number=.,Type=Float,Description="fv eov",IDX=9>\n'
+                '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="dp",IDX=10>\n'
+                '##FORMAT=<ID=FF,Number=1,Type=Float,Description="ff",IDX=11>\n'
+                '##FORMAT=<ID=FT,Number=1,Type=String,Description="ft",IDX=12>\n'
+                '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\tS2\n\x00'
+            ).encode('utf8')
+            info_payload = (
+                b'\x11\x01\x00'  # FLG (flag, n_vals=0) -> True
+                b'\x11\x02\x01'  # IS (int8, n_vals=0) -> None
+                b'\x11\x03\x01'  # IV (int8, n_vals=0) -> ()
+                b'\x11\x04\x05'  # FS (float, n_vals=0) -> None
+                b'\x11\x05\x05'  # FV (float, n_vals=0) -> ()
+                b'\x11\x06\x07'  # SS (char, n_vals=0) -> None
+                b'\x11\x07\x07'  # SV (char, n_vals=0) -> ()
+                b'\x11\x08\x31\x05\x80\x81'  # IV_EOV = [5, missing, EOV] -> (5, None)
+                + b'\x11\x09\x35' + struct.pack('<fII', 1.5, 0x7F800001, 0x7F800002)  # FV_EOV -> (1.5, None)
+            )
+            indiv_payload = (
+                b'\x11\x0a\x01'  # DP (int8, n_vals=0 across 2 samples) -> [nan, nan]
+                b'\x11\x0b\x05'  # FF (float, n_vals=0 across 2 samples) -> [nan, nan]
+                b'\x11\x0c\x07'  # FT (char, n_vals=0 across 2 samples) -> [('',), ('',)]
+            )
+            shared = (
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 9, (3 << 24) | 2)
+                + b'\x07\x17A\x00'
+                + info_payload
+            )
+            raw_bcf = Path(tmpdir) / 'zero_and_eov.bcf'
+            with BGZFile(raw_bcf, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(header_bytes)) + header_bytes)
+                bgz.write(struct.pack('<II', len(shared), len(indiv_payload)) + shared + indiv_payload)
+
+            rec_pysam = next(VariantFile(raw_bcf))
+            rec_pybcf = next(BcfReader(raw_bcf))
+            self.assertEqual(list(rec_pysam.info), list(rec_pybcf.info))
+            for field in rec_pysam.info:
+                self.assertEqual(rec_pysam.info[field], rec_pybcf.info[field])
+            self.assertEqual(rec_pybcf.samples['DP'].shape, (2,))
+            self.assertTrue(np.isnan(rec_pybcf.samples['DP']).all())
+            self.assertEqual(rec_pybcf.samples['FF'].shape, (2,))
+            self.assertTrue(np.isnan(rec_pybcf.samples['FF']).all())
+            self.assertEqual(rec_pybcf.samples['FT'], [('',), ('',)])
+
     def test_corrupt_or_missing_bcf_raises_value_error(self):
         ''' check GzReader raises ValueError on missing or truncated/corrupt BCF streams
         '''
@@ -546,10 +602,9 @@ class TestBcfv2_2(unittest.TestCase):
         
         for var_pysam, var_pybcf in zip(vcf_pysam, vcf_pybcf):
             # check all the info fields match
-            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
+            self.assertEqual(list(var_pybcf.info), list(var_pysam.info))
             for field in var_pysam.info:
-                val = True if var_pysam.info[field] is None else var_pysam.info[field]
-                self.assertEqual(val, var_pybcf.info[field])
+                self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
             
             self.assertEqual(list(var_pysam.format), list(var_pybcf.samples))
             for key in var_pybcf.samples:

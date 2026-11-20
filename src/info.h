@@ -3,7 +3,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "header.h"
@@ -29,7 +31,7 @@ struct InfoType {
 };
 
 struct NamedInfo {
-  std::string key;
+  const InfoField * field;
   InfoType info;
 };
 
@@ -37,21 +39,28 @@ class Info {
   const Header * header = nullptr;
   bool is_parsed = false;
   std::uint32_t n_info = 0;
+  std::uint32_t info_offset = 0;
+  std::uint32_t buf_len = 0;
+  std::unique_ptr<char[]> buf;
   std::vector<NamedInfo> fields;
-  std::vector<char> buf;
 
   void parse();
 public:
-  Info(const char * data, std::size_t len, const Header * header, std::uint32_t n_info)
-      : header(header), n_info(n_info) {
-    if (n_info > 0 && len > 0) {
-      buf.assign(data, data + len);
-    }
-  }
+  Info(std::unique_ptr<char[]> shared_buf, std::uint32_t shared_len, std::uint32_t offset,
+       const Header * hdr, std::uint32_t num_info)
+      : header(hdr), n_info(num_info), info_offset(offset), buf_len(shared_len),
+        buf(num_info > 0 ? std::move(shared_buf) : nullptr) {}
   Info() = default;
+  Info(Info &&) = default;
+  Info & operator=(Info &&) = default;
+
   std::vector<std::string> get_keys();
   std::size_t size();
-  bool get_type(const std::string & key, InfoType & out);
+  const NamedInfo & field_at(std::size_t idx);
+  bool get_type(const char * key, std::size_t key_len, InfoType & out);
+  bool get_type(const std::string & key, InfoType & out) {
+    return get_type(key.data(), key.size(), out);
+  }
 
   std::int32_t get_int(const InfoType & type) const;
   float get_float(const InfoType & type) const;

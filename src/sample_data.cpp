@@ -17,10 +17,10 @@
 namespace bcf {
 
 SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len, std::uint32_t _n_fmt, std::uint32_t _n_samples)
-    : header(&_header), n_fmt(_n_fmt), n_samples(_n_samples) {
+    : header(&_header), n_fmt(_n_fmt), buf_len(len), n_samples(_n_samples) {
   if (len > 0) {
-    buf.resize(len);
-    infile.read_exact(buf.data(), len, "truncated BCF sample data");
+    buf.reset(new char[len]);
+    infile.read_exact(buf.get(), len, "truncated BCF sample data");
   }
 }
 
@@ -36,19 +36,19 @@ void SampleData::parse() {
     throw std::invalid_argument("missing BCF header for FORMAT");
   }
 
+  const char * raw = buf.get();
   fields.reserve(n_fmt);
   std::uint32_t buf_idx = 0;
   for (std::uint32_t i = 0; i < n_fmt; i++) {
-    std::int32_t format_idx = parse_typed_int(buf.data(), buf.size(), buf_idx);
+    std::int32_t format_idx = parse_typed_int(raw, buf_len, buf_idx);
     if (format_idx < 0 || static_cast<std::size_t>(format_idx) >= header->format.size() ||
         header->format[format_idx].id.empty()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
     }
-    const FormatField & fmt_field = header->format[format_idx];
-    const std::string & key = fmt_field.id;
-    bool is_geno = fmt_field.is_gt;
+    const FormatField * fmt_field = &header->format[format_idx];
+    bool is_geno = fmt_field->is_gt;
 
-    Typed type_val(buf.data(), buf.size(), buf_idx);
+    Typed type_val(raw, buf_len, buf_idx);
     if (type_val.type == flag && type_val.n_vals != 0) {
       throw std::invalid_argument("invalid BCF FORMAT flag length");
     }
@@ -58,20 +58,20 @@ void SampleData::parse() {
     std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) *
                                 static_cast<std::uint64_t>(type_val.type_size) *
                                 static_cast<std::uint64_t>(n_samples);
-    if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf.size()) {
+    if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
     FormatType fmt = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
     bool updated = false;
     for (auto & entry : fields) {
-      if (entry.key == key) {
+      if (entry.field == fmt_field) {
         entry.format = fmt;
         updated = true;
         break;
       }
     }
     if (!updated) {
-      fields.push_back({key, fmt});
+      fields.push_back({fmt_field, fmt});
     }
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
@@ -84,7 +84,7 @@ std::vector<std::string> SampleData::get_keys() {
   std::vector<std::string> key_names;
   key_names.reserve(fields.size());
   for (const auto & entry : fields) {
-    key_names.push_back(entry.key);
+    key_names.push_back(entry.field->id);
   }
   return key_names;
 }
@@ -94,14 +94,17 @@ std::size_t SampleData::size() {
   return fields.size();
 }
 
+const NamedFormat & SampleData::field_at(std::size_t idx) {
+  parse();
+  return fields[idx];
+}
+
 /// @brief look up the data type for a given format key
-/// @param key string for the format key to check
-/// @param out struct populated with type, number of values, and buffer offset when found
-/// @return true if key is present in this variant's sample data
-bool SampleData::get_type(const std::string & key, FormatType & out) {
+bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & out) {
   parse();
   for (const auto & entry : fields) {
-    if (entry.key == key) {
+    const std::string & id = entry.field->id;
+    if (id.size() == key_len && std::memcmp(id.data(), key, key_len) == 0) {
       out = entry.format;
       return true;
     }
@@ -248,7 +251,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(const FormatType & type) c
   if (max_n == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n > buf_len) {
     throw std::invalid_argument("FORMAT int8 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
@@ -256,14 +259,14 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(const FormatType & type) c
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    n = parse_8bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
+    n = parse_8bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int8x16_t missing = vdupq_n_s8(INT8_MIN);
   const int8x16_t not_recorded = vdupq_n_s8(INT8_MIN + 1);
 
   for (; n + 16 <= max_n; n += 16) {
-    int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(buf.data() + offset + n));
+    int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(buf.get() + offset + n));
     data = vbslq_s8(vceqq_s8(data, not_recorded), missing, data);
 
     int16x8_t wider = vmovl_s8(vget_low_s8(data));
@@ -277,7 +280,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(const FormatType & type) c
 #endif
   offset += static_cast<std::uint32_t>(n);
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
+    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
   }
   return vals;
 }
@@ -289,7 +292,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(const FormatType & type) 
   if (max_n == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * 2 > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n * 2 > buf_len) {
     throw std::invalid_argument("FORMAT int16 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
@@ -297,14 +300,14 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(const FormatType & type) 
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    n = parse_16bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
+    n = parse_16bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int16x8_t missing = vdupq_n_s16(INT16_MIN);
   const int16x8_t not_recorded = vdupq_n_s16(INT16_MIN + 1);
 
   for (; n + 8 <= max_n; n += 8) {
-    int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(buf.data() + offset + n * 2));
+    int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(buf.get() + offset + n * 2));
     data = vbslq_s16(vceqq_s16(data, not_recorded), missing, data);
 
     vst1q_s32(&vals[n], replace_missing_s32(vmovl_s16(vget_low_s16(data)), -32768));
@@ -313,7 +316,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(const FormatType & type) 
 #endif
   offset += static_cast<std::uint32_t>(n * 2);
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
+    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
   }
   return vals;
 }
@@ -325,7 +328,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(const FormatType & type) 
   if (max_n == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * 4 > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n * 4 > buf_len) {
     throw std::invalid_argument("FORMAT int32 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
@@ -333,21 +336,21 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(const FormatType & type) 
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2")) {
-    n = parse_32bit_ints_avx2(buf.data() + offset, vals.data(), max_n);
+    n = parse_32bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
   }
 #elif defined(__aarch64__)
   const int32x4_t missing = vdupq_n_s32(INT32_MIN);
   const int32x4_t not_recorded = vdupq_n_s32(INT32_MIN + 1);
 
   for (; n + 4 <= max_n; n += 4) {
-    int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(buf.data() + offset + n * 4));
+    int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(buf.get() + offset + n * 4));
     data = vbslq_s32(vceqq_s32(data, not_recorded), missing, data);
     vst1q_s32(&vals[n], data);
   }
 #endif
   offset += static_cast<std::uint32_t>(n * 4);
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.data(), buf.size(), offset, type.type_size);
+    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
   }
   return vals;
 }
@@ -367,7 +370,7 @@ std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
   if (max_n == 0 || type.n_vals == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf_len) {
     throw std::invalid_argument("FORMAT GT data exceeds buffer");
   }
 
@@ -375,7 +378,7 @@ std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
   std::uint64_t n = 0;
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   if (__builtin_cpu_supports("avx2") && (type.n_vals == 2) && (type.type_size == 1)) {
-    n = parse_geno_avx2(buf.data() + offset, vals.data(), phase.data(), max_n);
+    n = parse_geno_avx2(buf.get() + offset, vals.data(), phase.data(), max_n);
   }
 #elif defined(__aarch64__)
   if ((type.type_size == 1) && (type.n_vals == 2)) {
@@ -384,7 +387,7 @@ std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
     const uint8x8_t one = vdup_n_u8(1);
 
     for (; n + 16 <= max_n; n += 16) {
-      uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(buf.data() + offset + n));
+      uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(buf.get() + offset + n));
       int8x16_t geno = vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(initial, 1), sub));
 
       // set BCF missing (0x80) and end-of-vector (0x81) entries to -1 (0xff)
@@ -411,7 +414,7 @@ std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
   for (std::uint64_t s = n / type.n_vals; s < n_samples; s++) {
     std::uint8_t is_phased = 1;
     for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      std::int32_t raw = parse_int(buf.data(), buf.size(), offset, type.type_size);
+      std::int32_t raw = parse_int(buf.get(), buf_len, offset, type.type_size);
       if (raw < 0) {
         vals[idx] = -1;
       } else {
@@ -436,10 +439,10 @@ std::vector<float> SampleData::get_floats(const FormatType & type) const {
   if (max_n == 0) {
     return vals;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf.size()) {
+  if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf_len) {
     throw std::invalid_argument("FORMAT float data exceeds buffer");
   }
-  const char * src = buf.data() + type.offset;
+  const char * src = buf.get() + type.offset;
   std::memcpy(vals.data(), src, max_n * sizeof(float));
   const float qnan = std::nanf("");
   for (std::uint64_t n = 0; n < max_n; n++) {
@@ -462,7 +465,7 @@ std::vector<std::string> SampleData::get_strings(const FormatType & type) const 
   }
   std::uint32_t offset = type.offset;
   for (std::uint32_t n = 0; n < n_samples; n++) {
-    vals[n] = parse_string(buf.data(), buf.size(), offset, type.n_vals);
+    vals[n] = parse_string(buf.get(), buf_len, offset, type.n_vals);
   }
   return vals;
 }

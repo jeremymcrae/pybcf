@@ -39,18 +39,7 @@ bool BCF::nextvar(Variant & var) {
   if (empty_region) {
     return false;
   }
-  while (var.read(infile, header)) {
-    if (!query_chrom.empty() && var.chrom != query_chrom) {
-      empty_region = true;
-      return false;
-    }
-    if (static_cast<std::int64_t>(var.pos) + std::max<std::int32_t>(1, var.rlen) - 1 < query_start) {
-      continue;
-    }
-    if (var.pos > query_end) {
-      empty_region = true;
-      return false;
-    }
+  if (var.read(infile, header, query_contig_id, query_start, query_end)) {
     return true;
   }
   empty_region = true;
@@ -74,7 +63,7 @@ void BCF::set_region(const std::string & chrom, std::int32_t start, std::int32_t
 
   std::uint32_t contig_id = header.get_contig_id(chrom);
 
-  query_chrom = chrom;
+  query_contig_id = static_cast<std::int32_t>(contig_id);
   query_start = start;
   query_end = end;
 

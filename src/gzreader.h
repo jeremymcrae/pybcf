@@ -36,6 +36,9 @@ public:
   // Read `count` bytes into `dst`, throwing std::invalid_argument if EOF is hit early.
   void read_exact(void * dst, std::size_t count, const char * err_msg = "unexpected end of file");
 
+  // Advance past `count` uncompressed bytes, throwing std::invalid_argument on early EOF.
+  void skip(std::size_t count, const char * err_msg = "unexpected end of file");
+
   // Seek to a BGZF virtual offset (compressed block offset + uncompressed intra-block offset).
   void seek(Offsets offset);
 };

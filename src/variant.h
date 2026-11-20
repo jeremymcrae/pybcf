@@ -1,6 +1,7 @@
 #ifndef BCF_VARIANT_H
 #define BCF_VARIANT_H
 
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -17,8 +18,14 @@ namespace bcf {
 class Variant {
 public:
   Variant() = default;
-  bool read(GzReader & infile, const Header & header);
+  Variant(Variant &&) = default;
+  Variant & operator=(Variant &&) = default;
 
+  bool read(GzReader & infile, const Header & header);
+  bool read(GzReader & infile, const Header & header, std::int32_t query_contig_id,
+            std::int32_t query_start, std::int32_t query_end);
+
+  std::uint32_t chrom_id = 0;
   std::string chrom;
   std::int32_t pos = 0;
   std::int32_t rlen = 0;

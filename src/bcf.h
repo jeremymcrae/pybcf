@@ -15,7 +15,7 @@ namespace bcf {
 class BCF {
   GzReader infile;
   IndexFile idxfile;
-  std::string query_chrom = "";
+  std::int32_t query_contig_id = -1;
   std::int32_t query_start = 0;
   std::int32_t query_end = INT32_MAX;
   bool empty_region = false;

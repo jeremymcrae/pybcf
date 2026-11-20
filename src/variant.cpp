@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 
 #include "variant.h"
 
@@ -23,83 +26,105 @@ const std::uint32_t FIXED_SHARED_BYTES = 24;
 
 } // namespace
 
-/// @brief read the next variant record from a BCF stream
-/// @param infile file to read variant data from
-/// @param header for interpreting contig name, info and sample fields
-/// @return false at clean EOF, true when a variant was read
 bool Variant::read(GzReader & infile, const Header & header) {
-  RecordHeader hdr{};
-  std::size_t n_read = infile.read(&hdr, sizeof(hdr));
-  if (n_read == 0) {
-    return false;
-  }
-  if (n_read != sizeof(hdr)) {
-    throw std::invalid_argument("truncated BCF variant header");
-  }
-  if (hdr.l_shared < FIXED_SHARED_BYTES) {
-    throw std::invalid_argument("invalid BCF shared record length");
-  }
+  return read(infile, header, -1, 0, INT32_MAX);
+}
 
-  std::uint32_t shared_len = hdr.l_shared - FIXED_SHARED_BYTES;
-  std::vector<char> buf(shared_len);
-  if (shared_len > 0) {
-    infile.read_exact(buf.data(), shared_len, "truncated BCF variant record");
-  }
-
-  if (hdr.chrom_id < 0 || static_cast<std::size_t>(hdr.chrom_id) >= header.contigs.size() ||
-      header.contigs[hdr.chrom_id].empty()) {
-    throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
-  }
-  if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
-    throw std::invalid_argument("invalid BCF variant coordinates");
-  }
-  chrom = header.contigs[hdr.chrom_id];
-  pos = hdr.pos0 + 1; // convert 0-based BCF coordinate to 1-based VCF coordinate
-  rlen = hdr.rlen;
-
-  qual = std::nanf("");
-  if (!is_bcf_float_missing(hdr.qual_bits)) {
-    std::memcpy(&qual, &hdr.qual_bits, sizeof(qual));
-  }
-
-  std::uint32_t n_alleles = hdr.n_allele_info >> 16;
-  std::uint32_t n_info = hdr.n_allele_info & 0xffff;
-  if (n_alleles == 0) {
-    throw std::invalid_argument(chrom + ":" + std::to_string(pos) + " lacks a ref allele");
-  }
-
-  std::uint32_t n_sample = hdr.n_fmt_sample & 0xffffff;
-  std::uint32_t n_fmt = hdr.n_fmt_sample >> 24;
-  if ((n_fmt > 0 || hdr.l_indiv > 0) && n_sample != header.samples.size()) {
-    throw std::invalid_argument("BCF record sample count does not match header");
-  }
-
-  std::uint32_t idx = 0;
-  varid = parse_typed_string(buf.data(), buf.size(), idx);
-  ref = parse_typed_string(buf.data(), buf.size(), idx);
-
-  alts.resize(n_alleles - 1);
-  for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
-    alts[i] = parse_typed_string(buf.data(), buf.size(), idx);
-  }
-
-  Typed type_val(buf.data(), buf.size(), idx);
-  if (type_val.n_vals > 0 && !is_int_type(type_val.type)) {
-    throw std::invalid_argument("expected integer BCF filter indices");
-  }
-  filters.resize(type_val.n_vals);
-  for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
-    std::int32_t filter_idx = parse_int(buf.data(), buf.size(), idx, type_val.type_size);
-    if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
-        header.filters[filter_idx].empty()) {
-      throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
+/// @brief read the next variant record matching an optional region filter
+bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_contig_id,
+                   std::int32_t query_start, std::int32_t query_end) {
+  while (true) {
+    RecordHeader hdr{};
+    std::size_t n_read = infile.read(&hdr, sizeof(hdr));
+    if (n_read == 0) {
+      return false;
     }
-    filters[i] = header.filters[filter_idx];
-  }
+    if (n_read != sizeof(hdr)) {
+      throw std::invalid_argument("truncated BCF variant header");
+    }
+    if (hdr.l_shared < FIXED_SHARED_BYTES) {
+      throw std::invalid_argument("invalid BCF shared record length");
+    }
+    if (hdr.chrom_id < 0 || static_cast<std::size_t>(hdr.chrom_id) >= header.contigs.size() ||
+        header.contigs[hdr.chrom_id].empty()) {
+      throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
+    }
+    if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
+      throw std::invalid_argument("invalid BCF variant coordinates");
+    }
 
-  info = Info(buf.data() + idx, buf.size() - idx, &header, n_info);
-  sample_data = SampleData(infile, header, hdr.l_indiv, n_fmt, n_sample);
-  return true;
+    std::uint32_t n_alleles = hdr.n_allele_info >> 16;
+    std::uint32_t n_info = hdr.n_allele_info & 0xffff;
+    if (n_alleles == 0) {
+      throw std::invalid_argument(header.contigs[hdr.chrom_id] + ":" +
+                                  std::to_string(hdr.pos0 + 1) + " lacks a ref allele");
+    }
+
+    std::uint32_t n_sample = hdr.n_fmt_sample & 0xffffff;
+    std::uint32_t n_fmt = hdr.n_fmt_sample >> 24;
+    if ((n_fmt > 0 || hdr.l_indiv > 0) && n_sample != header.samples.size()) {
+      throw std::invalid_argument("BCF record sample count does not match header");
+    }
+
+    std::uint32_t shared_len = hdr.l_shared - FIXED_SHARED_BYTES;
+    std::int32_t rec_pos = hdr.pos0 + 1;
+
+    if (query_contig_id >= 0 && hdr.chrom_id != query_contig_id) {
+      return false;
+    }
+    if (rec_pos > query_end) {
+      return false;
+    }
+    if (static_cast<std::int64_t>(rec_pos) + std::max<std::int32_t>(1, hdr.rlen) - 1 < query_start) {
+      infile.skip(static_cast<std::size_t>(shared_len) + static_cast<std::size_t>(hdr.l_indiv),
+                  "truncated BCF variant record");
+      continue;
+    }
+
+    std::unique_ptr<char[]> shared_buf;
+    if (shared_len > 0) {
+      shared_buf.reset(new char[shared_len]);
+      infile.read_exact(shared_buf.get(), shared_len, "truncated BCF variant record");
+    }
+    const char * buf = shared_buf.get();
+
+    chrom_id = static_cast<std::uint32_t>(hdr.chrom_id);
+    chrom = header.contigs[chrom_id];
+    pos = rec_pos;
+    rlen = hdr.rlen;
+
+    qual = std::nanf("");
+    if (!is_bcf_float_missing(hdr.qual_bits)) {
+      std::memcpy(&qual, &hdr.qual_bits, sizeof(qual));
+    }
+
+    std::uint32_t idx = 0;
+    varid = parse_typed_string(buf, shared_len, idx);
+    ref = parse_typed_string(buf, shared_len, idx);
+
+    alts.resize(n_alleles - 1);
+    for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
+      alts[i] = parse_typed_string(buf, shared_len, idx);
+    }
+
+    Typed type_val(buf, shared_len, idx);
+    if (type_val.n_vals > 0 && !is_int_type(type_val.type)) {
+      throw std::invalid_argument("expected integer BCF filter indices");
+    }
+    filters.resize(type_val.n_vals);
+    for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
+      std::int32_t filter_idx = parse_int(buf, shared_len, idx, type_val.type_size);
+      if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
+          header.filters[filter_idx].empty()) {
+        throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
+      }
+      filters[i] = header.filters[filter_idx];
+    }
+
+    info = Info(std::move(shared_buf), shared_len, idx, &header, n_info);
+    sample_data = SampleData(infile, header, hdr.l_indiv, n_fmt, n_sample);
+    return true;
+  }
 }
 
 }

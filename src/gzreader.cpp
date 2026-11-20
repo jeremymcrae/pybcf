@@ -118,6 +118,29 @@ void GzReader::read_exact(void * dst, std::size_t count, const char * err_msg) {
   }
 }
 
+void GzReader::skip(std::size_t count, const char * err_msg) {
+  if (file == nullptr) {
+    throw std::invalid_argument("cannot read from closed file: " + path);
+  }
+  while (count > 0) {
+    std::size_t avail = buf_len - buf_pos;
+    if (avail > 0) {
+      std::size_t take = std::min(count, avail);
+      buf_pos += take;
+      count -= take;
+      continue;
+    }
+    int got = gzread(file, buffer.data(), BUFFER_SIZE);
+    buf_pos = 0;
+    if (got <= 0) {
+      buf_len = 0;
+      check_error(got);
+      throw std::invalid_argument(err_msg);
+    }
+    buf_len = static_cast<std::size_t>(got);
+  }
+}
+
 void GzReader::seek(Offsets offset) {
   close();
 

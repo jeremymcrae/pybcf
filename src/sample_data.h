@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -22,7 +23,7 @@ struct FormatType {
 };
 
 struct NamedFormat {
-  std::string key;
+  const FormatField * field;
   FormatType format;
 };
 
@@ -30,9 +31,10 @@ struct NamedFormat {
 class SampleData {
   const Header * header = nullptr;
   std::uint32_t n_fmt = 0;
+  std::uint32_t buf_len = 0;
   bool is_parsed = false;
   std::vector<NamedFormat> fields;
-  std::vector<char> buf;
+  std::unique_ptr<char[]> buf;
 
   void parse();
   std::vector<std::int32_t> get_geno(const FormatType & type);
@@ -42,9 +44,15 @@ class SampleData {
 public:
   SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t n_samples);
   SampleData() = default;
+  SampleData(SampleData &&) = default;
+  SampleData & operator=(SampleData &&) = default;
   std::vector<std::string> get_keys();
   std::size_t size();
-  bool get_type(const std::string & key, FormatType & out);
+  const NamedFormat & field_at(std::size_t idx);
+  bool get_type(const char * key, std::size_t key_len, FormatType & out);
+  bool get_type(const std::string & key, FormatType & out) {
+    return get_type(key.data(), key.size(), out);
+  }
   std::vector<std::int32_t> get_ints(const FormatType & type);
   std::vector<float> get_floats(const FormatType & type) const;
   std::vector<std::string> get_strings(const FormatType & type) const;

@@ -22,10 +22,10 @@ cdef extern from 'types.h' namespace 'bcf':
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         # declare class constructor and methods
-        BCF(string path, string index_path) except +
+        BCF(const string & path, const string & index_path) except +
         BCF() except +
         bool nextvar(Variant &) except +
-        void set_region(string chrom, int32_t start, int32_t end) except +
+        void set_region(const string & chrom, int32_t start, int32_t end) except +
         void close() except +
         Header header
 
@@ -96,7 +96,7 @@ cdef extern from 'variant.h' namespace 'bcf':
         # declare class constructor and methods
         Variant() except +
         string chrom
-        int pos
+        int32_t pos
         string ref
         vector[string] alts
         float qual
@@ -109,6 +109,10 @@ cdef class BcfHeader:
     cdef Header * thisptr
     cdef BcfReader _reader
     cdef list _samples, _contigs, _info, _filters, _formats
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError('cannot instantiate BcfHeader directly')
+
     cdef set_data(self, Header * header, BcfReader reader):
         ''' assigns Header to python class '''
         self.thisptr = header
@@ -157,6 +161,10 @@ cdef class BcfHeader:
 cdef class BcfInfo:
     cdef Info * thisptr
     cdef BcfVariant _variant
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError('cannot instantiate BcfInfo directly')
+
     cdef set_data(self, Info * info, BcfVariant variant):
         ''' assigns Info to python class '''
         self.thisptr = info
@@ -223,6 +231,10 @@ cdef class BcfInfo:
 cdef class BcfSampleData:
     cdef SampleData * thisptr
     cdef BcfVariant _variant
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError('cannot instantiate BcfSampleData directly')
+
     cdef set_data(self, SampleData * data, BcfVariant variant):
         ''' assigns SampleData to python class '''
         self.thisptr = data
@@ -262,7 +274,7 @@ cdef class BcfSampleData:
 
         cdef vector[int32_t] v_int
         cdef vector[float] v_float
-        if fmt_type.data_type in (int8, int16, int32):
+        if fmt_type.data_type == int8 or fmt_type.data_type == int16 or fmt_type.data_type == int32:
             if n_vals == 0:
                 return np.full(shape, np.nan, dtype=float)
             v_int = self.thisptr.get_ints(fmt_type)
@@ -315,6 +327,9 @@ cdef class BcfVariant:
     cdef BcfSampleData _samples
     def __cinit__(self, BcfReader bcf):
         self._reader = bcf
+
+    def __init__(self, *args, **kwargs):
+        raise TypeError('cannot instantiate BcfVariant directly')
 
     @property
     def chrom(self):
@@ -375,7 +390,7 @@ cdef class BcfVariant:
         ''' variant info data
         '''
         if self._info is None:
-            self._info = BcfInfo()
+            self._info = BcfInfo.__new__(BcfInfo)
             self._info.set_data(&self.thisptr.info, self)
         return self._info
 
@@ -384,7 +399,7 @@ cdef class BcfVariant:
         ''' variant sample data
         '''
         if self._samples is None:
-            self._samples = BcfSampleData()
+            self._samples = BcfSampleData.__new__(BcfSampleData)
             self._samples.set_data(&self.thisptr.sample_data, self)
         return self._samples
 
@@ -433,7 +448,7 @@ cdef class BcfReader:
         '''
         if not self.is_open:
             raise ValueError('bcf is closed')
-        cdef BcfVariant var = BcfVariant(self)
+        cdef BcfVariant var = BcfVariant.__new__(BcfVariant, self)
         if not self.thisptr.nextvar(var.thisptr):
             raise StopIteration
         return var
@@ -443,7 +458,7 @@ cdef class BcfReader:
         ''' header info from bcf file
         '''
         if self._header is None:
-            self._header = BcfHeader()
+            self._header = BcfHeader.__new__(BcfHeader)
             self._header.set_data(&self.thisptr.header, self)
         return self._header
 

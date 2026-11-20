@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 #include "zlib.h"
 
 #include "index.h"
@@ -13,7 +14,7 @@ namespace bcf {
 class GzReader {
   gzFile file = nullptr;
   std::string path;
-  char buffer[65536];
+  std::vector<char> buffer;
   std::size_t buf_len = 0;
   std::size_t buf_pos = 0;
 

@@ -415,6 +415,13 @@ class TestBcfReader(unittest.TestCase):
         with self.assertRaises(ValueError):
             explicit_bcf.fetch(contigs[0])
 
+        # Internal wrapper types must reject direct Python instantiation rather than segfaulting
+        for cls in (type(bcf.header), type(var.info), type(var.samples)):
+            with self.assertRaises(TypeError):
+                cls()
+        with self.assertRaises(TypeError):
+            type(var)(bcf)
+
         # Sites-only BCF has 0 samples; phased should return an empty bool array
         sites_var = next(BcfReader(sites_bcf))
         self.assertEqual(sites_var.samples.phased.dtype, np.bool_)

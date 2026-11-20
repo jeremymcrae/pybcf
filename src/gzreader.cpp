@@ -15,6 +15,8 @@ namespace bcf {
 
 namespace {
 
+const std::size_t BUFFER_SIZE = 65536;
+
 int open_readonly(const char * filepath) {
 #ifdef _WIN32
   return _open(filepath, _O_RDONLY | _O_BINARY);
@@ -46,13 +48,15 @@ void GzReader::open(const std::string & filepath) {
   path = filepath;
   file = gzopen(path.c_str(), "rb");
   if (file != nullptr) {
-    gzbuffer(file, sizeof(buffer));
+    buffer.resize(BUFFER_SIZE);
+    gzbuffer(file, BUFFER_SIZE);
   }
 }
 
 void GzReader::close() {
   buf_pos = 0;
   buf_len = 0;
+  std::vector<char>().swap(buffer);
   if (file != nullptr) {
     gzFile f = file;
     file = nullptr;
@@ -79,14 +83,14 @@ std::size_t GzReader::read(void * dst, std::size_t count) {
     std::size_t avail = buf_len - buf_pos;
     if (avail > 0) {
       std::size_t take = std::min(count - total, avail);
-      std::memcpy(out + total, buffer + buf_pos, take);
+      std::memcpy(out + total, buffer.data() + buf_pos, take);
       buf_pos += take;
       total += take;
       continue;
     }
 
     std::size_t rem = count - total;
-    if (rem >= sizeof(buffer)) {
+    if (rem >= BUFFER_SIZE) {
       unsigned int chunk = static_cast<unsigned int>(std::min<std::size_t>(rem, 1u << 30));
       int got = gzread(file, out + total, chunk);
       if (got <= 0) {
@@ -95,7 +99,7 @@ std::size_t GzReader::read(void * dst, std::size_t count) {
       }
       total += static_cast<std::size_t>(got);
     } else {
-      int got = gzread(file, buffer, sizeof(buffer));
+      int got = gzread(file, buffer.data(), BUFFER_SIZE);
       buf_pos = 0;
       if (got <= 0) {
         buf_len = 0;
@@ -130,7 +134,8 @@ void GzReader::seek(Offsets offset) {
     close_fd(fd);
     throw std::invalid_argument("cannot seek within this gzfile");
   }
-  gzbuffer(file, sizeof(buffer));
+  buffer.resize(BUFFER_SIZE);
+  gzbuffer(file, BUFFER_SIZE);
 
   if (offset.u_offset > 0) {
     if (gzseek(file, static_cast<z_off_t>(offset.u_offset), SEEK_SET) < 0) {

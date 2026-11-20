@@ -56,10 +56,9 @@ private:
     char             opened;             // open/close state of stream
     int              mode;               // I/O mode
     char             fmode[10];
-    FILE *           handle;
     std::string      filename;
 public:
-    gzstreambuf() : opened(0) {
+    gzstreambuf() : file(nullptr), opened(0), mode(0) {
         setp( buffer, buffer + (bufferSize-1));
         setg( buffer + 4,     // beginning of putback area
               buffer + 4,     // read position

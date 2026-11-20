@@ -1,9 +1,9 @@
 #ifndef BCF_FORMAT_H
 #define BCF_FORMAT_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "gzreader.h"
@@ -21,23 +21,33 @@ struct FormatType {
   bool is_geno;
 };
 
+struct NamedFormat {
+  std::string key;
+  FormatType format;
+};
+
 // class to parse data types for each sample
 class SampleData {
-  // for each format record, track which type it is, and some index value
-  std::unordered_map<std::string, FormatType> keys;
+  const Header * header = nullptr;
+  std::uint32_t n_fmt = 0;
+  bool is_parsed = false;
+  std::vector<NamedFormat> fields;
   std::vector<char> buf;
-  std::vector<std::int32_t> get_geno(FormatType &type);
-  std::vector<std::int32_t> parse_8bit_ints(FormatType & type);
-  std::vector<std::int32_t> parse_16bit_ints(FormatType & type);
-  std::vector<std::int32_t> parse_32bit_ints(FormatType & type);
+
+  void parse();
+  std::vector<std::int32_t> get_geno(const FormatType & type);
+  std::vector<std::int32_t> parse_8bit_ints(const FormatType & type) const;
+  std::vector<std::int32_t> parse_16bit_ints(const FormatType & type) const;
+  std::vector<std::int32_t> parse_32bit_ints(const FormatType & type) const;
 public:
-  SampleData(GzReader &infile, const Header &header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples);
+  SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t n_samples);
   SampleData() = default;
   std::vector<std::string> get_keys();
-  bool get_type(const std::string & key, FormatType & out) const;
-  std::vector<std::int32_t> get_ints(FormatType & type);
-  std::vector<float> get_floats(FormatType & type);
-  std::vector<std::string> get_strings(FormatType & type);
+  std::size_t size();
+  bool get_type(const std::string & key, FormatType & out);
+  std::vector<std::int32_t> get_ints(const FormatType & type);
+  std::vector<float> get_floats(const FormatType & type) const;
+  std::vector<std::string> get_strings(const FormatType & type) const;
 
   std::uint32_t n_samples = 0;
   bool phase_checked = false;

@@ -16,25 +16,34 @@
 
 namespace bcf {
 
-SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t _n_samples) {
-  n_samples = _n_samples;
-  if (len == 0) {
+SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len, std::uint32_t _n_fmt, std::uint32_t _n_samples)
+    : header(&_header), n_fmt(_n_fmt), n_samples(_n_samples) {
+  if (len > 0) {
+    buf.resize(len);
+    infile.read_exact(buf.data(), len, "truncated BCF sample data");
+  }
+}
+
+void SampleData::parse() {
+  if (is_parsed) {
     return;
   }
+  if (n_fmt == 0) {
+    is_parsed = true;
+    return;
+  }
+  if (header == nullptr) {
+    throw std::invalid_argument("missing BCF header for FORMAT");
+  }
 
-  // read the sample data into a buffer, but don't parse until required
-  buf.resize(len);
-  infile.read_exact(buf.data(), len, "truncated BCF sample data");
-
-  // read the available keys
+  fields.reserve(n_fmt);
   std::uint32_t buf_idx = 0;
-  Typed type_val;
   for (std::uint32_t i = 0; i < n_fmt; i++) {
-    type_val = Typed(buf.data(), buf.size(), buf_idx);
+    Typed type_val(buf.data(), buf.size(), buf_idx);
     std::int32_t format_idx = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
-    auto fmt_it = (format_idx >= 0) ? _header.format.find(static_cast<std::uint32_t>(format_idx))
-                                    : _header.format.end();
-    if (fmt_it == _header.format.end()) {
+    auto fmt_it = (format_idx >= 0) ? header->format.find(static_cast<std::uint32_t>(format_idx))
+                                    : header->format.end();
+    if (fmt_it == header->format.end()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
     }
     const std::string & key = fmt_it->second;
@@ -47,38 +56,58 @@ SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t 
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf.size()) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
-    keys[key] = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
+    FormatType fmt = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
+    bool updated = false;
+    for (auto & entry : fields) {
+      if (entry.key == key) {
+        entry.format = fmt;
+        updated = true;
+        break;
+      }
+    }
+    if (!updated) {
+      fields.push_back({key, fmt});
+    }
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
+  is_parsed = true;
 }
 
-/// @brief get key names as strings
-/// @return vector of sample format keys
+/// @brief get key names in BCF record order
 std::vector<std::string> SampleData::get_keys() {
+  parse();
   std::vector<std::string> key_names;
-  for (auto & x : keys) {
-    key_names.push_back(x.first);
+  key_names.reserve(fields.size());
+  for (const auto & entry : fields) {
+    key_names.push_back(entry.key);
   }
   return key_names;
+}
+
+std::size_t SampleData::size() {
+  parse();
+  return fields.size();
 }
 
 /// @brief look up the data type for a given format key
 /// @param key string for the format key to check
 /// @param out struct populated with type, number of values, and buffer offset when found
 /// @return true if key is present in this variant's sample data
-bool SampleData::get_type(const std::string & key, FormatType & out) const {
-  auto it = keys.find(key);
-  if (it == keys.end()) {
-    return false;
+bool SampleData::get_type(const std::string & key, FormatType & out) {
+  parse();
+  for (const auto & entry : fields) {
+    if (entry.key == key) {
+      out = entry.format;
+      return true;
+    }
   }
-  out = it->second;
-  return true;
+  return false;
 }
 
 /// @brief get vector of ints for a given format key
 /// @param type struct containing the type size, number of values etc
 /// @return vector of 32-bit ints
-std::vector<std::int32_t> SampleData::get_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::get_ints(const FormatType & type) {
   if (type.is_geno) {
     return get_geno(type);
   } else if (type.type_size == 1) {
@@ -211,7 +240,7 @@ static inline int32x4_t replace_missing_s32(int32x4_t data, std::int32_t old_mis
 #endif
 
 /// @brief parse 8-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::parse_8bit_ints(const FormatType & type) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
@@ -252,7 +281,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
 }
 
 /// @brief parse 16-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::parse_16bit_ints(const FormatType & type) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
@@ -288,7 +317,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
 }
 
 /// @brief parse 32-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
+std::vector<std::int32_t> SampleData::parse_32bit_ints(const FormatType & type) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
@@ -326,7 +355,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
 /// @param type struct containing number of values per person, and where in the
 ///             buffer to start parsing
 /// @return vector of genotype values as 32-bit ints (missing=-1)
-std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
+std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
   // confirm we checked sample phasing if we look at the genotype data
   phase_checked = true;
   phase.assign(n_samples, 0);
@@ -399,7 +428,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
 /// @brief parse float values from the buffer
 /// @param type struct with number of values per person, and buffer offset
 /// @return vector of floats
-std::vector<float> SampleData::get_floats(FormatType & type) {
+std::vector<float> SampleData::get_floats(const FormatType & type) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   std::vector<float> vals(max_n);
   if (max_n == 0) {
@@ -424,7 +453,7 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
 /// @brief parse strings from the buffer
 /// @param type struct with number of bytes per person, and buffer offset
 /// @return vector of strings
-std::vector<std::string> SampleData::get_strings(FormatType & type) {
+std::vector<std::string> SampleData::get_strings(const FormatType & type) const {
   std::vector<std::string> vals(n_samples);
   if (n_samples == 0 || type.n_vals == 0) {
     return vals;

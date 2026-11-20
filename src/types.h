@@ -1,7 +1,6 @@
 #ifndef BCF_TYPES_H
 #define BCF_TYPES_H
 
-#include <algorithm>
 #include <climits>
 #include <cmath>
 #include <cstddef>
@@ -174,10 +173,11 @@ inline std::string parse_string(const char * buf, std::size_t buf_len, std::uint
   if (static_cast<std::size_t>(idx) + size > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF string");
   }
-  std::string val(buf + idx, size);
+  const char * start = buf + idx;
+  const char * nul = static_cast<const char *>(std::memchr(start, '\0', size));
+  std::size_t len = (nul != nullptr) ? static_cast<std::size_t>(nul - start) : size;
   idx += size;
-  val.erase(std::find(val.begin(), val.end(), '\0'), val.end());
-  return val;
+  return std::string(start, len);
 }
 
 } // namespace

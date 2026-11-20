@@ -71,7 +71,7 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(var_pysam.qual, var_pybcf.qual)
             self.assertEqual(list(var_pysam.filter), var_pybcf.filter)
             self.assertEqual(var_pysam.id, var_pybcf.id)
-            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
+            self.assertEqual(list(var_pybcf.info), list(var_pysam.info))
             
             # check all the info fields match
             for field in var_pysam.info:
@@ -91,7 +91,7 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(var_pysam.qual, var_pybcf.qual)
             self.assertEqual(list(var_pysam.filter), var_pybcf.filter)
             self.assertEqual(var_pysam.id, var_pybcf.id)
-            self.assertEqual(set(var_pybcf.info), set(var_pysam.info))
+            self.assertEqual(list(var_pybcf.info), list(var_pysam.info))
             
             # check all the info fields match
             for field in var_pysam.info:
@@ -107,7 +107,7 @@ class TestBcfReader(unittest.TestCase):
                 self.assertTrue((is_nan_pysam == is_nan_pybcf).all())
                 self.assertTrue((geno_pybcf[~is_nan_pysam] == geno_pysam[~is_nan_pysam]).all())
             
-            self.assertEqual(set(var_pysam.format), set(var_pybcf.samples))
+            self.assertEqual(list(var_pysam.format), list(var_pybcf.samples))
             for key in var_pybcf.samples:
                 if key == 'GT':
                     continue
@@ -523,7 +523,7 @@ class TestBcfv2_2(unittest.TestCase):
                 val = True if var_pysam.info[field] is None else var_pysam.info[field]
                 self.assertEqual(val, var_pybcf.info[field])
             
-            self.assertEqual(set(var_pysam.format), set(var_pybcf.samples))
+            self.assertEqual(list(var_pysam.format), list(var_pybcf.samples))
             for key in var_pybcf.samples:
                 data_pybcf = var_pybcf.samples[key]
                 data_pysam = [x[key] for x in var_pysam.samples.itervalues()]

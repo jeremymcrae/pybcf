@@ -28,6 +28,7 @@ struct InfoType {
 
 class Info {
   std::unordered_map<std::string, InfoType> keys;
+  std::vector<std::string> key_order;
 
   const Header * header = nullptr;
   bool is_parsed = false;
@@ -50,7 +51,8 @@ public:
     }
   }
   Info() = default;
-  std::vector<std::string> get_keys();
+  const std::vector<std::string> & get_keys();
+  std::size_t size();
   bool get_type(const std::string & key, InfoType & out);
 
   std::int32_t get_int(std::uint32_t offset) const { return scalar_ints.at(offset); }

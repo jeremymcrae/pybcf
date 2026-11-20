@@ -7,14 +7,14 @@
 
 namespace bcf {
 
-std::vector<std::string> Info::get_keys() {
+const std::vector<std::string> & Info::get_keys() {
   parse();
-  std::vector<std::string> key_vals;
-  key_vals.reserve(keys.size());
-  for (const auto & x : keys) {
-    key_vals.push_back(x.first);
-  }
-  return key_vals;
+  return key_order;
+}
+
+std::size_t Info::size() {
+  parse();
+  return keys.size();
 }
 
 /// @brief parse the info data for keys and values
@@ -30,6 +30,9 @@ void Info::parse() {
     throw std::invalid_argument("missing BCF header for INFO");
   }
 
+  keys.reserve(n_info);
+  key_order.reserve(n_info);
+
   std::uint32_t buf_idx = 0;
   for (std::uint32_t i = 0; i < n_info; i++) {
     Typed id_type(buf.data(), buf.size(), buf_idx);
@@ -40,6 +43,9 @@ void Info::parse() {
       throw std::invalid_argument("unknown INFO ID index: " + std::to_string(id_idx));
     }
     const InfoField & field = field_it->second;
+    if (keys.find(field.id) == keys.end()) {
+      key_order.push_back(field.id);
+    }
 
     Typed type_val(buf.data(), buf.size(), buf_idx);
     bool is_vector = (type_val.n_vals > 1) || field.is_list;

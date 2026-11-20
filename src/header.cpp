@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <climits>
 #include <sstream>
 #include <stdexcept>
 
@@ -16,6 +17,27 @@ static std::string trim(const std::string &s, const std::string &vals) {
   return s.substr(start, (end + 1) - start);
 }
 
+/// @brief parse a non-negative 32-bit IDX attribute from a BCF header tag
+static std::uint32_t parse_idx(const std::string & s) {
+  if (s.empty()) {
+    throw std::invalid_argument("empty IDX field in BCF header");
+  }
+  for (unsigned char ch : s) {
+    if (ch < '0' || ch > '9') {
+      throw std::invalid_argument("invalid IDX field in BCF header: " + s);
+    }
+  }
+  try {
+    unsigned long val = std::stoul(s);
+    if (val > UINT32_MAX) {
+      throw std::invalid_argument("IDX field out of range in BCF header: " + s);
+    }
+    return static_cast<std::uint32_t>(val);
+  } catch (const std::exception &) {
+    throw std::invalid_argument("invalid IDX field in BCF header: " + s);
+  }
+}
+
 /// @brief parse the comma-separated fields of an info/format/contig line
 static std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
   text = trim(text, "<>\r");
@@ -24,7 +46,11 @@ static std::unordered_map<std::string, std::string> parse_delimited(std::string 
   bool in_quotes = false;
   size_t start = 0;
   for (size_t i = 0; i <= text.size(); i++) {
-    if (i < text.size() && text[i] == '"' && (i == 0 || text[i - 1] != '\\')) {
+    if (in_quotes && i + 1 < text.size() && text[i] == '\\') {
+      i++;
+      continue;
+    }
+    if (i < text.size() && text[i] == '"') {
       in_quotes = !in_quotes;
     } else if (i == text.size() || (text[i] == ',' && !in_quotes)) {
       std::string item = text.substr(start, i - start);
@@ -63,6 +89,7 @@ Header::Header(const std::string & text) {
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
   bool has_idx_tag = false;
+  bool seen_chrom = false;
 
   std::istringstream lines(text);
   std::string line;
@@ -75,9 +102,10 @@ Header::Header(const std::string & text) {
     }
     if (line[1] != '#') {
       if (line.rfind("#CHROM", 0) == 0) {
-        if (!samples.empty()) {
+        if (seen_chrom) {
           throw std::invalid_argument("BCF has two header lines starting with #CHROM!");
         }
+        seen_chrom = true;
         const std::string marker = "FORMAT\t";
         size_t pos = line.find(marker);
         if (pos != std::string::npos) {
@@ -106,7 +134,7 @@ Header::Header(const std::string & text) {
     auto idx_it = data.find("IDX");
     if (kind == "contig") {
       if (idx_it != data.end()) {
-        contig_idx = static_cast<std::uint32_t>(std::stoul(idx_it->second));
+        contig_idx = parse_idx(idx_it->second);
       }
       contigs[contig_idx] = id;
       contig_ids[id] = contig_idx;
@@ -116,7 +144,7 @@ Header::Header(const std::string & text) {
         throw std::invalid_argument("invalid BCF - missing IDX field in " + id);
       }
       if (idx_it != data.end()) {
-        idx = static_cast<std::uint32_t>(std::stoul(idx_it->second));
+        idx = parse_idx(idx_it->second);
         has_idx_tag = true;
       } else if (kind == "FILTER" && id == "PASS") {
         // PASS is implicitly at index 0 when IDX tags are absent.

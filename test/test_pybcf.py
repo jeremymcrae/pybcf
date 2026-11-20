@@ -183,30 +183,43 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
 
     def test_header_quoted_commas_and_blank_lines(self):
-        ''' check header parsing handles blank lines, quoted commas/equals, and contig IDX
+        ''' check header parsing handles blank lines, quoted commas/equals/backslashes, and IDX errors
         '''
         header_text = (
             '##fileformat=VCFv4.2\n'
             '\n'
-            '##FILTER=<ID=PASS,Description="All filters passed">\n'
+            '##FILTER=<ID=PASS,Description="All filters passed",IDX=0>\n'
             '##contig=<ID=chr1,length=1000>\n'
-            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, and ID=FAKE_ID">\n'
+            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, ID=FAKE_ID, and slash \\\\",IDX=1>\n'
             '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
             '\x00'
         ).encode('utf8')
 
+        def write_header_bcf(path, hdr_bytes):
+            with gzip.open(path, 'wb') as gz:
+                gz.write(b'BCF\x02\x02')
+                gz.write(struct.pack('<I', len(hdr_bytes)))
+                gz.write(hdr_bytes)
+
         with tempfile.TemporaryDirectory() as tmpdir:
             bcf_path = Path(tmpdir) / 'hdr.bcf'
-            with gzip.open(bcf_path, 'wb') as gz:
-                gz.write(b'BCF\x02\x02')
-                gz.write(struct.pack('<I', len(header_text)))
-                gz.write(header_text)
+            write_header_bcf(bcf_path, header_text)
 
             bcf = BcfReader(bcf_path)
             self.assertEqual(bcf.header.contigs, ['chr1'])
             self.assertEqual(bcf.header.info, ['REAL_ID'])
             self.assertEqual(bcf.header.filters, ['PASS'])
             self.assertEqual(list(bcf), [])
+
+            for bad_hdr in (
+                '##fileformat=VCFv4.2\n#CHROM\tPOS\n#CHROM\tPOS\n\x00',
+                '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=-1>\n#CHROM\tPOS\n\x00',
+                '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=99999999999999999999>\n#CHROM\tPOS\n\x00',
+            ):
+                bad_path = Path(tmpdir) / 'bad_hdr.bcf'
+                write_header_bcf(bad_path, bad_hdr.encode('utf8'))
+                with self.assertRaises(ValueError):
+                    BcfReader(bad_path)
 
     def test_negative_info_ints_and_empty_info(self):
         ''' check negative int8/int16/int32 INFO values and zero-INFO variants match pysam

@@ -33,8 +33,9 @@ class IndexFile {
 
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:
-  IndexFile(std::string path);
+  explicit IndexFile(const std::string & path) { open(path, true); }
   IndexFile() = default;
+  bool open(const std::string & path, bool required = true);
   std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end) const;
   bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
   bool has_index = false;

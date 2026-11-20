@@ -32,14 +32,11 @@ BCF::BCF(std::string path, std::string index_path) {
   }
   header = Header(text);
   
-  // try opening the index file
-  if (index_path.size() == 0) {
+  bool explicit_index = !index_path.empty();
+  if (!explicit_index) {
     index_path = path + ".csi";
   }
-  try {
-    idxfile = IndexFile(index_path);
-  }  catch (const std::invalid_argument& e) {}
-  
+  idxfile.open(index_path, explicit_index);
 }
 
 // extract the next variant from the BCF, returning false at EOF or end of region

@@ -29,10 +29,17 @@ std::int64_t parent_bin(std::int64_t bin) {
 
 /// @brief load file according to https://samtools.github.io/hts-specs/CSIv1.pdf
 /// @param path path to CSI index file
-IndexFile::IndexFile(std::string path) {
+/// @param required whether a missing index file should throw an error
+bool IndexFile::open(const std::string & path, bool required) {
+  has_index = false;
+  indices.clear();
+
   GzReader infile(path);
   if (!infile.is_open()) {
-    throw std::invalid_argument("cannot open index file at " + path);
+    if (required) {
+      throw std::invalid_argument("cannot open index file at " + path);
+    }
+    return false;
   }
 
   char magic[4];
@@ -91,6 +98,7 @@ IndexFile::IndexFile(std::string path) {
     indices.push_back(std::move(bins));
   }
   has_index = true;
+  return true;
 }
 
 /// @brief calculate the list of bins that may overlap with 0-based region [beg, end)

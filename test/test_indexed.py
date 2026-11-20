@@ -215,6 +215,18 @@ class TestIndexed(unittest.TestCase):
         finally:
             temp_path.rename(index_path)
 
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError):
+                BcfReader(self.hapmap, index_path=Path(tmpdir) / 'missing.csi')
+
+            tmp_bcf = Path(tmpdir) / 'corrupt_idx.bcf'
+            tmp_csi = Path(tmpdir) / 'corrupt_idx.bcf.csi'
+            shutil.copy(self.test_cases, tmp_bcf)
+            with gzip.open(tmp_csi, 'wb') as gz:
+                gz.write(b'NOT_CSI')
+            with self.assertRaises(ValueError):
+                BcfReader(tmp_bcf)
+
     def test_fetch_empty_chrom_on_fresh_reader(self):
         ''' check fetching an empty contig works without prior iteration
         '''

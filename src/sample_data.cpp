@@ -84,14 +84,9 @@ std::size_t SampleData::size() {
   return fields.size();
 }
 
-std::uint32_t SampleData::key_id_at(std::size_t idx) {
+std::vector<NamedFormat> & SampleData::get_fields() {
   parse();
-  return fields[idx].id_idx;
-}
-
-const FormatType & SampleData::type_at(std::size_t idx) {
-  parse();
-  return fields[idx].format;
+  return fields;
 }
 
 bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & out) {

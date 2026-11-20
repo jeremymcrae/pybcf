@@ -56,14 +56,11 @@ public:
   Info & operator=(Info &&) = default;
 
   std::size_t size();
-  std::uint32_t key_id_at(std::size_t idx);
-  const InfoType & type_at(std::size_t idx);
+  std::vector<NamedInfo> & get_fields();
   bool get_type(const char * key, std::size_t key_len, InfoType & out);
 
   std::int32_t get_int(const InfoType & type) const;
-  std::int32_t get_raw_int(const InfoType & type) const;
   float get_float(const InfoType & type) const;
-  std::uint32_t get_raw_float_bits(const InfoType & type) const;
   std::string get_string(const InfoType & type) const;
 
   std::vector<std::int32_t> get_ints(const InfoType & type) const;

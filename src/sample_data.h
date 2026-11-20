@@ -49,8 +49,7 @@ public:
   SampleData & operator=(SampleData &&) = default;
 
   std::size_t size();
-  std::uint32_t key_id_at(std::size_t idx);
-  const FormatType & type_at(std::size_t idx);
+  std::vector<NamedFormat> & get_fields();
   bool get_type(const char * key, std::size_t key_len, FormatType & out);
 
   void read_ints(const FormatType & type, double * dst) const;

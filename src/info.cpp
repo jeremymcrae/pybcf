@@ -14,14 +14,9 @@ std::size_t Info::size() {
   return fields.size();
 }
 
-std::uint32_t Info::key_id_at(std::size_t idx) {
+std::vector<NamedInfo> & Info::get_fields() {
   parse();
-  return fields[idx].id_idx;
-}
-
-const InfoType & Info::type_at(std::size_t idx) {
-  parse();
-  return fields[idx].info;
+  return fields;
 }
 
 /// @brief scan INFO field descriptors without eagerly decoding values
@@ -107,23 +102,9 @@ std::int32_t Info::get_int(const InfoType & type) const {
   return parse_int(buf.get(), buf_len, idx, type.type_size);
 }
 
-std::int32_t Info::get_raw_int(const InfoType & type) const {
-  std::uint32_t idx = type.offset;
-  return parse_raw_int(buf.get(), buf_len, idx, type.type_size);
-}
-
 float Info::get_float(const InfoType & type) const {
   std::uint32_t idx = type.offset;
   return parse_float(buf.get(), buf_len, idx);
-}
-
-std::uint32_t Info::get_raw_float_bits(const InfoType & type) const {
-  if (static_cast<std::size_t>(type.offset) + 4 > buf_len) {
-    throw std::invalid_argument("buffer overflow while reading BCF float");
-  }
-  std::uint32_t bits = 0;
-  std::memcpy(&bits, buf.get() + type.offset, 4);
-  return bits;
 }
 
 std::string Info::get_string(const InfoType & type) const {

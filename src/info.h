@@ -31,6 +31,7 @@ struct InfoType {
 };
 
 struct NamedInfo {
+  std::uint32_t id_idx;
   const InfoField * field;
   InfoType info;
 };
@@ -54,16 +55,15 @@ public:
   Info(Info &&) = default;
   Info & operator=(Info &&) = default;
 
-  std::vector<std::string> get_keys();
   std::size_t size();
-  const NamedInfo & field_at(std::size_t idx);
+  std::uint32_t key_id_at(std::size_t idx);
+  const InfoType & type_at(std::size_t idx);
   bool get_type(const char * key, std::size_t key_len, InfoType & out);
-  bool get_type(const std::string & key, InfoType & out) {
-    return get_type(key.data(), key.size(), out);
-  }
 
   std::int32_t get_int(const InfoType & type) const;
+  std::int32_t get_raw_int(const InfoType & type) const;
   float get_float(const InfoType & type) const;
+  std::uint32_t get_raw_float_bits(const InfoType & type) const;
   std::string get_string(const InfoType & type) const;
 
   std::vector<std::int32_t> get_ints(const InfoType & type) const;

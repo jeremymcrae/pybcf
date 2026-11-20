@@ -33,6 +33,8 @@ public:
   std::vector<std::string> get_info() const;
   std::vector<std::string> get_filters() const;
   std::vector<std::string> get_formats() const;
+  std::vector<std::string> get_info_by_idx() const;
+  std::vector<std::string> get_formats_by_idx() const;
   std::uint32_t get_contig_id(const std::string & contig) const;
 };
 

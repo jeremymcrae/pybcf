@@ -26,14 +26,13 @@ public:
             std::int32_t query_start, std::int32_t query_end);
 
   std::uint32_t chrom_id = 0;
-  std::string chrom;
   std::int32_t pos = 0;
   std::int32_t rlen = 0;
   std::string ref;
   std::vector<std::string> alts;
   float qual = std::nanf("");
   std::string varid;
-  std::vector<std::string> filters;
+  std::vector<std::uint32_t> filter_ids;
   Info info;
   SampleData sample_data;
 };

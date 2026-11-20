@@ -45,7 +45,8 @@ void SampleData::parse() {
         header->format[format_idx].id.empty()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
     }
-    const FormatField * fmt_field = &header->format[format_idx];
+    std::uint32_t uid = static_cast<std::uint32_t>(format_idx);
+    const FormatField * fmt_field = &header->format[uid];
     bool is_geno = fmt_field->is_gt;
 
     Typed type_val(raw, buf_len, buf_idx);
@@ -64,29 +65,18 @@ void SampleData::parse() {
     FormatType fmt = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
     bool updated = false;
     for (auto & entry : fields) {
-      if (entry.field == fmt_field) {
+      if (entry.id_idx == uid) {
         entry.format = fmt;
         updated = true;
         break;
       }
     }
     if (!updated) {
-      fields.push_back({fmt_field, fmt});
+      fields.push_back({uid, fmt_field, fmt});
     }
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
   is_parsed = true;
-}
-
-/// @brief get key names in BCF record order
-std::vector<std::string> SampleData::get_keys() {
-  parse();
-  std::vector<std::string> key_names;
-  key_names.reserve(fields.size());
-  for (const auto & entry : fields) {
-    key_names.push_back(entry.field->id);
-  }
-  return key_names;
 }
 
 std::size_t SampleData::size() {
@@ -94,12 +84,16 @@ std::size_t SampleData::size() {
   return fields.size();
 }
 
-const NamedFormat & SampleData::field_at(std::size_t idx) {
+std::uint32_t SampleData::key_id_at(std::size_t idx) {
   parse();
-  return fields[idx];
+  return fields[idx].id_idx;
 }
 
-/// @brief look up the data type for a given format key
+const FormatType & SampleData::type_at(std::size_t idx) {
+  parse();
+  return fields[idx].format;
+}
+
 bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & out) {
   parse();
   for (const auto & entry : fields) {
@@ -112,352 +106,388 @@ bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & ou
   return false;
 }
 
-/// @brief get vector of ints for a given format key
-/// @param type struct containing the type size, number of values etc
-/// @return vector of 32-bit ints
-std::vector<std::int32_t> SampleData::get_ints(const FormatType & type) {
+void SampleData::read_ints(const FormatType & type, double * dst) const {
   if (type.is_geno) {
-    return get_geno(type);
+    read_geno(type, dst);
   } else if (type.type_size == 1) {
-    return parse_8bit_ints(type);
+    read_8bit_ints(type, dst);
   } else if (type.type_size == 2) {
-    return parse_16bit_ints(type);
+    read_16bit_ints(type, dst);
   } else if (type.type_size == 4) {
-    return parse_32bit_ints(type);
+    read_32bit_ints(type, dst);
+  } else {
+    throw std::invalid_argument("unsupported FORMAT integer byte width: " + std::to_string(type.type_size));
   }
-  throw std::invalid_argument("unsupported FORMAT integer byte width: " + std::to_string(type.type_size));
 }
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-/// @brief replace sign-extended narrow missing sentinel with INT32_MIN
-__attribute__((target("avx2")))
-static inline __m128i replace_missing_epi32(__m128i data, std::int32_t old_missing) {
-  const __m128i missing_old = _mm_set1_epi32(old_missing);
-  const __m128i missing_32bit = _mm_set1_epi32(INT32_MIN);
-  __m128i mask = _mm_cmpeq_epi32(data, missing_old);
-  return _mm_blendv_epi8(data, missing_32bit, mask);
+static inline bool cpu_has_avx2() {
+  static const bool supported = __builtin_cpu_supports("avx2");
+  return supported;
 }
 
 __attribute__((target("avx2")))
-static std::uint64_t parse_8bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
-  const __m256i missing = _mm256_set1_epi8(static_cast<char>(0x80));
-  const __m256i not_recorded = _mm256_set1_epi8(static_cast<char>(0x81));
+static inline void store_epi32_as_double(__m128i vals, double * dst, __m256d miss_thresh, __m256d qnan) {
+  __m256d d = _mm256_cvtepi32_pd(vals);
+  __m256d mask = _mm256_cmp_pd(d, miss_thresh, _CMP_LE_OQ);
+  _mm256_storeu_pd(dst, _mm256_blendv_pd(d, qnan, mask));
+}
+
+__attribute__((target("avx2")))
+static std::uint64_t parse_8bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
+  const __m256d miss_thresh = _mm256_set1_pd(-127.0);
+  const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
   for (; n + 32 <= max_n; n += 32) {
     __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n));
-    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi8(data, not_recorded));
-
     __m128i low = _mm256_castsi256_si128(data);
     __m128i hi = _mm256_extracti128_si256(data, 1);
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), replace_missing_epi32(_mm_cvtepi8_epi32(low), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 16]), replace_missing_epi32(_mm_cvtepi8_epi32(hi), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 20]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 24]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)), -128));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 28]), replace_missing_epi32(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)), -128));
+
+    store_epi32_as_double(_mm_cvtepi8_epi32(low), dst + n, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)), dst + n + 4, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)), dst + n + 8, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)), dst + n + 12, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(hi), dst + n + 16, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)), dst + n + 20, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)), dst + n + 24, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)), dst + n + 28, miss_thresh, qnan);
   }
   return n;
 }
 
 __attribute__((target("avx2")))
-static std::uint64_t parse_16bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
-  const __m256i missing = _mm256_set1_epi16(static_cast<short>(0x8000));
-  const __m256i not_recorded = _mm256_set1_epi16(static_cast<short>(0x8001));
+static std::uint64_t parse_16bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
+  const __m256d miss_thresh = _mm256_set1_pd(-32767.0);
+  const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
   for (; n + 16 <= max_n; n += 16) {
     __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 2));
-    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi16(data, not_recorded));
-
     __m128i low = _mm256_castsi256_si128(data);
     __m128i hi = _mm256_extracti128_si256(data, 1);
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), replace_missing_epi32(_mm_cvtepi16_epi32(low), -32768));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), replace_missing_epi32(_mm_cvtepi16_epi32(_mm_bsrli_si128(low, 8)), -32768));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), replace_missing_epi32(_mm_cvtepi16_epi32(hi), -32768));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), replace_missing_epi32(_mm_cvtepi16_epi32(_mm_bsrli_si128(hi, 8)), -32768));
+
+    store_epi32_as_double(_mm_cvtepi16_epi32(low), dst + n, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi16_epi32(_mm_bsrli_si128(low, 8)), dst + n + 4, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi16_epi32(hi), dst + n + 8, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi16_epi32(_mm_bsrli_si128(hi, 8)), dst + n + 12, miss_thresh, qnan);
   }
   return n;
 }
 
 __attribute__((target("avx2")))
-static std::uint64_t parse_32bit_ints_avx2(const char * src, std::int32_t * dst, std::uint64_t max_n) {
-  const __m256i missing = _mm256_set1_epi32(INT32_MIN);
-  const __m256i not_recorded = _mm256_set1_epi32(INT32_MIN + 1);
+static std::uint64_t parse_32bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
+  const __m256d miss_thresh = _mm256_set1_pd(static_cast<double>(INT32_MIN + 1));
+  const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
   for (; n + 8 <= max_n; n += 8) {
-    __m256i data = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 4));
-    data = _mm256_blendv_epi8(data, missing, _mm256_cmpeq_epi32(data, not_recorded));
-    _mm256_storeu_si256(reinterpret_cast<__m256i *>(&dst[n]), data);
+    __m128i low = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + n * 4));
+    __m128i hi = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + n * 4 + 16));
+    store_epi32_as_double(low, dst + n, miss_thresh, qnan);
+    store_epi32_as_double(hi, dst + n + 4, miss_thresh, qnan);
   }
   return n;
 }
 
 __attribute__((target("avx2")))
-static std::uint64_t parse_geno_avx2(const char * src, std::int32_t * dst, std::uint8_t * phase, std::uint64_t max_n) {
+static std::uint64_t parse_geno_avx2(const char * src, double * dst, std::uint64_t max_n) {
   const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
   const __m256i sub = _mm256_set1_epi8(1);
   const __m256i zero = _mm256_setzero_si256();
-  const __m128i one = _mm_set1_epi8(1);
-  const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
-  const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
+  const __m256d miss_thresh = _mm256_set1_pd(-1.0);
+  const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
   for (; n + 32 <= max_n; n += 32) {
     __m256i initial = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n));
-
     __m256i geno = _mm256_and_si256(initial, mask_geno);
     geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
-
-    // set BCF missing (0x80) and end-of-vector (0x81) entries (signed < 0) to -1 (0xff)
     geno = _mm256_or_si256(geno, _mm256_cmpgt_epi8(zero, initial));
 
     __m128i low = _mm256_castsi256_si128(geno);
     __m128i hi = _mm256_extracti128_si256(geno, 1);
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n]), _mm_cvtepi8_epi32(low));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 4]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 8]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 12]), _mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 16]), _mm_cvtepi8_epi32(hi));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 20]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 24]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&dst[n + 28]), _mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)));
 
-    // sample phasing from each sample's second allele (odd bytes of initial)
-    __m128i init_lo = _mm256_castsi256_si128(initial);
-    __m128i init_hi = _mm256_extracti128_si256(initial, 1);
-    __m128i second_alleles = _mm_or_si128(_mm_shuffle_epi8(init_lo, odd_lo),
-                                          _mm_shuffle_epi8(init_hi, odd_hi));
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(&phase[n >> 1]), _mm_and_si128(second_alleles, one));
+    store_epi32_as_double(_mm_cvtepi8_epi32(low), dst + n, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 4)), dst + n + 4, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 8)), dst + n + 8, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(low, 12)), dst + n + 12, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(hi), dst + n + 16, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 4)), dst + n + 20, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 8)), dst + n + 24, miss_thresh, qnan);
+    store_epi32_as_double(_mm_cvtepi8_epi32(_mm_bsrli_si128(hi, 12)), dst + n + 28, miss_thresh, qnan);
+  }
+  return n;
+}
+
+__attribute__((target("avx2")))
+static std::uint32_t parse_phase_avx2(const char * src, std::uint8_t * dst, std::uint32_t n_samples) {
+  const __m128i one = _mm_set1_epi8(1);
+  const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
+  const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
+
+  std::uint32_t s = 0;
+  for (; s + 16 <= n_samples; s += 16) {
+    __m128i lo = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + s * 2));
+    __m128i hi = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + s * 2 + 16));
+    __m128i second = _mm_or_si128(_mm_shuffle_epi8(lo, odd_lo), _mm_shuffle_epi8(hi, odd_hi));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + s), _mm_and_si128(second, one));
+  }
+  return s;
+}
+
+__attribute__((target("avx2")))
+static std::uint64_t parse_floats_avx2(const char * src, float * dst, std::uint64_t max_n) {
+  const __m256i miss1 = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_MISSING));
+  const __m256i miss2 = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_VECTOR_END));
+  const __m256i qnan = _mm256_set1_epi32(0x7fc00000);
+
+  std::uint64_t n = 0;
+  for (; n + 8 <= max_n; n += 8) {
+    __m256i bits = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 4));
+    __m256i is_miss = _mm256_or_si256(_mm256_cmpeq_epi32(bits, miss1),
+                                      _mm256_cmpeq_epi32(bits, miss2));
+    bits = _mm256_blendv_epi8(bits, qnan, is_miss);
+    _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + n), bits);
   }
   return n;
 }
 #elif defined(__aarch64__)
-/// @brief replace sign-extended narrow missing sentinel with INT32_MIN
-static inline int32x4_t replace_missing_s32(int32x4_t data, std::int32_t old_missing) {
-  const int32x4_t missing_old = vdupq_n_s32(old_missing);
-  const int32x4_t missing_32bit = vdupq_n_s32(INT32_MIN);
-  return vbslq_s32(vceqq_s32(data, missing_old), missing_32bit, data);
+static inline void store_s32_as_double_neon(int32x4_t vals, double * dst, float64x2_t miss_thresh, float64x2_t qnan) {
+  float64x2_t d_lo = vcvtq_f64_s64(vmovl_s32(vget_low_s32(vals)));
+  float64x2_t d_hi = vcvtq_f64_s64(vmovl_s32(vget_high_s32(vals)));
+  vst1q_f64(dst, vbslq_f64(vcleq_f64(d_lo, miss_thresh), qnan, d_lo));
+  vst1q_f64(dst + 2, vbslq_f64(vcleq_f64(d_hi, miss_thresh), qnan, d_hi));
 }
 #endif
 
-/// @brief parse 8-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_8bit_ints(const FormatType & type) const {
+void SampleData::read_8bit_ints(const FormatType & type, double * dst) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
-    return vals;
+    return;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n > buf_len) {
     throw std::invalid_argument("FORMAT int8 data exceeds buffer");
   }
+  const char * raw = buf.get();
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-  if (__builtin_cpu_supports("avx2")) {
-    n = parse_8bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
+  if (cpu_has_avx2()) {
+    n = parse_8bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const int8x16_t missing = vdupq_n_s8(INT8_MIN);
-  const int8x16_t not_recorded = vdupq_n_s8(INT8_MIN + 1);
-
+  const float64x2_t miss_thresh = vdupq_n_f64(-127.0);
+  const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 16 <= max_n; n += 16) {
-    int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(buf.get() + offset + n));
-    data = vbslq_s8(vceqq_s8(data, not_recorded), missing, data);
-
+    int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(raw + offset + n));
     int16x8_t wider = vmovl_s8(vget_low_s8(data));
-    vst1q_s32(&vals[n], replace_missing_s32(vmovl_s16(vget_low_s16(wider)), -128));
-    vst1q_s32(&vals[n + 4], replace_missing_s32(vmovl_s16(vget_high_s16(wider)), -128));
-
+    store_s32_as_double_neon(vmovl_s16(vget_low_s16(wider)), dst + n, miss_thresh, qnan_vec);
+    store_s32_as_double_neon(vmovl_s16(vget_high_s16(wider)), dst + n + 4, miss_thresh, qnan_vec);
     wider = vmovl_s8(vget_high_s8(data));
-    vst1q_s32(&vals[n + 8], replace_missing_s32(vmovl_s16(vget_low_s16(wider)), -128));
-    vst1q_s32(&vals[n + 12], replace_missing_s32(vmovl_s16(vget_high_s16(wider)), -128));
+    store_s32_as_double_neon(vmovl_s16(vget_low_s16(wider)), dst + n + 8, miss_thresh, qnan_vec);
+    store_s32_as_double_neon(vmovl_s16(vget_high_s16(wider)), dst + n + 12, miss_thresh, qnan_vec);
   }
 #endif
   offset += static_cast<std::uint32_t>(n);
+  const double qnan = std::nan("");
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
+    std::int32_t v = parse_int(raw, buf_len, offset, 1);
+    dst[n] = (v == INT32_MIN) ? qnan : static_cast<double>(v);
   }
-  return vals;
 }
 
-/// @brief parse 16-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_16bit_ints(const FormatType & type) const {
+void SampleData::read_16bit_ints(const FormatType & type, double * dst) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
-    return vals;
+    return;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * 2 > buf_len) {
     throw std::invalid_argument("FORMAT int16 data exceeds buffer");
   }
+  const char * raw = buf.get();
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-  if (__builtin_cpu_supports("avx2")) {
-    n = parse_16bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
+  if (cpu_has_avx2()) {
+    n = parse_16bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const int16x8_t missing = vdupq_n_s16(INT16_MIN);
-  const int16x8_t not_recorded = vdupq_n_s16(INT16_MIN + 1);
-
+  const float64x2_t miss_thresh = vdupq_n_f64(-32767.0);
+  const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 8 <= max_n; n += 8) {
-    int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(buf.get() + offset + n * 2));
-    data = vbslq_s16(vceqq_s16(data, not_recorded), missing, data);
-
-    vst1q_s32(&vals[n], replace_missing_s32(vmovl_s16(vget_low_s16(data)), -32768));
-    vst1q_s32(&vals[n + 4], replace_missing_s32(vmovl_s16(vget_high_s16(data)), -32768));
+    int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(raw + offset + n * 2));
+    store_s32_as_double_neon(vmovl_s16(vget_low_s16(data)), dst + n, miss_thresh, qnan_vec);
+    store_s32_as_double_neon(vmovl_s16(vget_high_s16(data)), dst + n + 4, miss_thresh, qnan_vec);
   }
 #endif
   offset += static_cast<std::uint32_t>(n * 2);
+  const double qnan = std::nan("");
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
+    std::int32_t v = parse_int(raw, buf_len, offset, 2);
+    dst[n] = (v == INT32_MIN) ? qnan : static_cast<double>(v);
   }
-  return vals;
 }
 
-/// @brief parse 32-bit ints from the buffer
-std::vector<std::int32_t> SampleData::parse_32bit_ints(const FormatType & type) const {
+void SampleData::read_32bit_ints(const FormatType & type, double * dst) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  std::vector<std::int32_t> vals(max_n);
   if (max_n == 0) {
-    return vals;
+    return;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * 4 > buf_len) {
     throw std::invalid_argument("FORMAT int32 data exceeds buffer");
   }
+  const char * raw = buf.get();
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
 
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-  if (__builtin_cpu_supports("avx2")) {
-    n = parse_32bit_ints_avx2(buf.get() + offset, vals.data(), max_n);
+  if (cpu_has_avx2()) {
+    n = parse_32bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const int32x4_t missing = vdupq_n_s32(INT32_MIN);
-  const int32x4_t not_recorded = vdupq_n_s32(INT32_MIN + 1);
-
+  const float64x2_t miss_thresh = vdupq_n_f64(static_cast<double>(INT32_MIN + 1));
+  const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 4 <= max_n; n += 4) {
-    int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(buf.get() + offset + n * 4));
-    data = vbslq_s32(vceqq_s32(data, not_recorded), missing, data);
-    vst1q_s32(&vals[n], data);
+    int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(raw + offset + n * 4));
+    store_s32_as_double_neon(data, dst + n, miss_thresh, qnan_vec);
   }
 #endif
   offset += static_cast<std::uint32_t>(n * 4);
+  const double qnan = std::nan("");
   for (; n < max_n; n++) {
-    vals[n] = parse_int(buf.get(), buf_len, offset, type.type_size);
+    std::int32_t v = parse_int(raw, buf_len, offset, 4);
+    dst[n] = (v == INT32_MIN) ? qnan : static_cast<double>(v);
   }
-  return vals;
 }
 
-/// @brief optimized parsing of genotype data
-///
-/// @param type struct containing number of values per person, and where in the
-///             buffer to start parsing
-/// @return vector of genotype values as 32-bit ints (missing=-1)
-std::vector<std::int32_t> SampleData::get_geno(const FormatType & type) {
-  // confirm we checked sample phasing if we look at the genotype data
-  phase_checked = true;
-  phase.assign(n_samples, 0);
-
+void SampleData::read_geno(const FormatType & type, double * dst) const {
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  std::vector<std::int32_t> vals(max_n);
-  if (max_n == 0 || type.n_vals == 0) {
-    return vals;
+  if (max_n == 0) {
+    return;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf_len) {
     throw std::invalid_argument("FORMAT GT data exceeds buffer");
   }
-
+  const char * raw = buf.get();
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
+
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
-  if (__builtin_cpu_supports("avx2") && (type.n_vals == 2) && (type.type_size == 1)) {
-    n = parse_geno_avx2(buf.get() + offset, vals.data(), phase.data(), max_n);
+  if (cpu_has_avx2() && type.type_size == 1) {
+    n = parse_geno_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  if ((type.type_size == 1) && (type.n_vals == 2)) {
+  if (type.type_size == 1) {
     const uint8x16_t sub = vdupq_n_u8(1);
-    const uint8x16_t miss_thresh = vdupq_n_u8(0x80);
-    const uint8x8_t one = vdup_n_u8(1);
+    const uint8x16_t miss_u8 = vdupq_n_u8(0x80);
+    const float64x2_t miss_thresh = vdupq_n_f64(-1.0);
+    const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
 
     for (; n + 16 <= max_n; n += 16) {
-      uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(buf.get() + offset + n));
+      uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(raw + offset + n));
       int8x16_t geno = vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(initial, 1), sub));
-
-      // set BCF missing (0x80) and end-of-vector (0x81) entries to -1 (0xff)
-      uint8x16_t missed = vcgeq_u8(initial, miss_thresh);
-      geno = vorrq_s8(geno, vreinterpretq_s8_u8(missed));
+      geno = vorrq_s8(geno, vreinterpretq_s8_u8(vcgeq_u8(initial, miss_u8)));
 
       int16x8_t wider = vmovl_s8(vget_low_s8(geno));
-      vst1q_s32(&vals[n], vmovl_s16(vget_low_s16(wider)));
-      vst1q_s32(&vals[n + 4], vmovl_s16(vget_high_s16(wider)));
-
+      store_s32_as_double_neon(vmovl_s16(vget_low_s16(wider)), dst + n, miss_thresh, qnan_vec);
+      store_s32_as_double_neon(vmovl_s16(vget_high_s16(wider)), dst + n + 4, miss_thresh, qnan_vec);
       wider = vmovl_s8(vget_high_s8(geno));
-      vst1q_s32(&vals[n + 8], vmovl_s16(vget_low_s16(wider)));
-      vst1q_s32(&vals[n + 12], vmovl_s16(vget_high_s16(wider)));
-
-      // sample phasing from odd bytes
-      uint8x8_t second_alleles = vshrn_n_u16(vreinterpretq_u16_u8(initial), 8);
-      vst1_u8(&phase[n >> 1], vand_u8(second_alleles, one));
+      store_s32_as_double_neon(vmovl_s16(vget_low_s16(wider)), dst + n + 8, miss_thresh, qnan_vec);
+      store_s32_as_double_neon(vmovl_s16(vget_high_s16(wider)), dst + n + 12, miss_thresh, qnan_vec);
     }
   }
 #endif
-
   offset += static_cast<std::uint32_t>(n * type.type_size);
-  std::uint64_t idx = n;
-  for (std::uint64_t s = n / type.n_vals; s < n_samples; s++) {
-    std::uint8_t is_phased = 1;
-    for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      std::int32_t raw = parse_int(buf.get(), buf_len, offset, type.type_size);
-      if (raw < 0) {
-        vals[idx] = -1;
-      } else {
-        if (i > 0) {
-          is_phased &= static_cast<std::uint8_t>(raw & 1);
-        }
-        vals[idx] = (raw >> 1) - 1;
-      }
-      idx++;
-    }
-    phase[s] = is_phased;
+  const double qnan = std::nan("");
+  for (; n < max_n; n++) {
+    std::int32_t v = parse_int(raw, buf_len, offset, type.type_size);
+    std::int32_t allele = (v < 0) ? -1 : ((v >> 1) - 1);
+    dst[n] = (allele < 0) ? qnan : static_cast<double>(allele);
   }
-  return vals;
 }
 
-/// @brief parse float values from the buffer
-/// @param type struct with number of values per person, and buffer offset
-/// @return vector of floats
-std::vector<float> SampleData::get_floats(const FormatType & type) const {
+void SampleData::read_phase(const FormatType & type, std::uint8_t * dst) const {
+  if (n_samples == 0) {
+    return;
+  }
+  if (type.n_vals == 0) {
+    std::memset(dst, 0, n_samples);
+    return;
+  }
   std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  std::vector<float> vals(max_n);
+  if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf_len) {
+    throw std::invalid_argument("FORMAT GT data exceeds buffer");
+  }
+  const char * raw = buf.get();
+  std::uint32_t s = 0;
+
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+  if (cpu_has_avx2() && type.n_vals == 2 && type.type_size == 1) {
+    s = parse_phase_avx2(raw + type.offset, dst, n_samples);
+  }
+#elif defined(__aarch64__)
+  if (type.n_vals == 2 && type.type_size == 1) {
+    const uint8x8_t one = vdup_n_u8(1);
+    for (; s + 8 <= n_samples; s += 8) {
+      uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(raw + type.offset + s * 2));
+      uint8x8_t second = vshrn_n_u16(vreinterpretq_u16_u8(initial), 8);
+      vst1_u8(dst + s, vand_u8(second, one));
+    }
+  }
+#endif
+  std::uint32_t offset = type.offset + s * type.n_vals * type.type_size;
+  for (; s < n_samples; s++) {
+    std::uint8_t is_phased = 1;
+    for (std::uint32_t i = 0; i < type.n_vals; i++) {
+      std::int32_t v = parse_int(raw, buf_len, offset, type.type_size);
+      if (v >= 0 && i > 0) {
+        is_phased &= static_cast<std::uint8_t>(v & 1);
+      }
+    }
+    dst[s] = is_phased;
+  }
+}
+
+void SampleData::read_floats(const FormatType & type, float * dst) const {
+  std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
   if (max_n == 0) {
-    return vals;
+    return;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf_len) {
     throw std::invalid_argument("FORMAT float data exceeds buffer");
   }
   const char * src = buf.get() + type.offset;
-  std::memcpy(vals.data(), src, max_n * sizeof(float));
+  std::uint64_t n = 0;
+
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+  if (cpu_has_avx2()) {
+    n = parse_floats_avx2(src, dst, max_n);
+  }
+#elif defined(__aarch64__)
+  const uint32x4_t miss1 = vdupq_n_u32(BCF_FLOAT_MISSING);
+  const uint32x4_t miss2 = vdupq_n_u32(BCF_FLOAT_VECTOR_END);
+  const uint32x4_t qnan_bits = vdupq_n_u32(0x7fc00000u);
+  for (; n + 4 <= max_n; n += 4) {
+    uint32x4_t bits = vld1q_u32(reinterpret_cast<const std::uint32_t *>(src + n * 4));
+    uint32x4_t is_miss = vorrq_u32(vceqq_u32(bits, miss1), vceqq_u32(bits, miss2));
+    vst1q_u32(reinterpret_cast<std::uint32_t *>(dst + n), vbslq_u32(is_miss, qnan_bits, bits));
+  }
+#endif
   const float qnan = std::nanf("");
-  for (std::uint64_t n = 0; n < max_n; n++) {
+  for (; n < max_n; n++) {
     std::uint32_t bits = 0;
     std::memcpy(&bits, src + n * sizeof(float), sizeof(bits));
     if (is_bcf_float_missing(bits)) {
-      vals[n] = qnan;
+      dst[n] = qnan;
+    } else {
+      std::memcpy(dst + n, &bits, sizeof(float));
     }
   }
-  return vals;
 }
 
-/// @brief parse strings from the buffer
-/// @param type struct with number of bytes per person, and buffer offset
-/// @return vector of strings
 std::vector<std::string> SampleData::get_strings(const FormatType & type) const {
   std::vector<std::string> vals(n_samples);
   if (n_samples == 0 || type.n_vals == 0) {
@@ -470,4 +500,4 @@ std::vector<std::string> SampleData::get_strings(const FormatType & type) const 
   return vals;
 }
 
-}
+} // namespace bcf

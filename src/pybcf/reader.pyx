@@ -1,10 +1,13 @@
+# cython: boundscheck=False, wraparound=False
 import logging
 from pathlib import Path
 
+from cpython.unicode cimport PyUnicode_AsUTF8AndSize
 from libcpp cimport bool
 from libc.math cimport isnan
 from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
+from libc.string cimport memcpy
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
@@ -21,7 +24,6 @@ cdef extern from 'types.h' namespace 'bcf':
 
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
-        # declare class constructor and methods
         BCF(const string & path, const string & index_path) except +
         BCF() except +
         bool nextvar(Variant &) except +
@@ -31,14 +33,17 @@ cdef extern from 'bcf.h' namespace 'bcf':
 
 cdef extern from 'header.h' namespace 'bcf':
     cdef cppclass Header:
-        # declare class constructor and methods
         Header() except +
         Header(const string & text) except +
+        vector[string] contigs
+        vector[string] filters
         vector[string] samples
         vector[string] get_contigs() except +
         vector[string] get_info() except +
         vector[string] get_filters() except +
         vector[string] get_formats() except +
+        vector[string] get_info_by_idx() except +
+        vector[string] get_formats_by_idx() except +
 
 cdef extern from 'info.h' namespace 'bcf':
     cdef enum InfoKind:
@@ -58,15 +63,16 @@ cdef extern from 'info.h' namespace 'bcf':
         uint32_t n_vals
 
     cdef cppclass Info:
-        # declare class constructor and methods
         Info() except +
         size_t size() except +
-        vector[string] get_keys() except +
-        bool get_type(const string &, InfoType &) except +
+        uint32_t key_id_at(size_t) except +
+        const InfoType & type_at(size_t) except +
+        bool get_type(const char *, size_t, InfoType &) except +
         int32_t get_int(const InfoType &) except +
+        int32_t get_raw_int(const InfoType &) except +
         float get_float(const InfoType &) except +
+        uint32_t get_raw_float_bits(const InfoType &) except +
         string get_string(const InfoType &) except +
-
         vector[int32_t] get_ints(const InfoType &) except +
         vector[float] get_floats(const InfoType &) except +
 
@@ -79,31 +85,33 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         bool is_geno
 
     cdef cppclass SampleData:
-        # declare class constructor and methods
         SampleData() except +
         size_t size() except +
-        vector[string] get_keys() except +
-        bool get_type(const string &, FormatType &) except +
-        vector[int32_t] get_ints(const FormatType &) except +
-        vector[float] get_floats(const FormatType &) except +
+        uint32_t key_id_at(size_t) except +
+        const FormatType & type_at(size_t) except +
+        bool get_type(const char *, size_t, FormatType &) except +
+        void read_ints(const FormatType &, double *) except +
+        void read_floats(const FormatType &, float *) except +
+        void read_phase(const FormatType &, uint8_t *) except +
         vector[string] get_strings(const FormatType &) except +
         uint32_t n_samples
-        bool phase_checked
-        vector[uint8_t] phase
 
 cdef extern from 'variant.h' namespace 'bcf':
     cdef cppclass Variant:
-        # declare class constructor and methods
         Variant() except +
-        string chrom
+        uint32_t chrom_id
         int32_t pos
         string ref
         vector[string] alts
         float qual
         string varid
-        vector[string] filters
+        vector[uint32_t] filter_ids
         Info info
         SampleData sample_data
+
+cdef inline tuple _decode_string_vec(const vector[string] & vec):
+    cdef size_t i, n = vec.size()
+    return tuple([vec[i].decode('utf8') if not vec[i].empty() else None for i in range(n)])
 
 cdef class BcfHeader:
     cdef Header * thisptr
@@ -122,40 +130,58 @@ cdef class BcfHeader:
     def samples(self):
         ''' list of sample IDs in the BCF
         '''
+        cdef size_t i, n
         if self._samples is None:
-            self._samples = [x.decode('utf8') for x in self.thisptr.samples]
+            n = self.thisptr.samples.size()
+            self._samples = [self.thisptr.samples[i].decode('utf8') for i in range(n)]
         return self._samples
 
     @property
     def contigs(self):
         ''' list of possible contigs in the BCF
         '''
+        cdef vector[string] vals
+        cdef size_t i, n
         if self._contigs is None:
-            self._contigs = [x.decode('utf8') for x in self.thisptr.get_contigs()]
+            vals = self.thisptr.get_contigs()
+            n = vals.size()
+            self._contigs = [vals[i].decode('utf8') for i in range(n)]
         return self._contigs
 
     @property
     def filters(self):
         ''' list of possible filters in the BCF
         '''
+        cdef vector[string] vals
+        cdef size_t i, n
         if self._filters is None:
-            self._filters = [x.decode('utf8') for x in self.thisptr.get_filters()]
+            vals = self.thisptr.get_filters()
+            n = vals.size()
+            self._filters = [vals[i].decode('utf8') for i in range(n)]
         return self._filters
 
     @property
     def formats(self):
         ''' list of possible format fields per variant
         '''
+        cdef vector[string] vals
+        cdef size_t i, n
         if self._formats is None:
-            self._formats = [x.decode('utf8') for x in self.thisptr.get_formats()]
+            vals = self.thisptr.get_formats()
+            n = vals.size()
+            self._formats = [vals[i].decode('utf8') for i in range(n)]
         return self._formats
 
     @property
     def info(self):
         ''' list of possible info fields per variant
         '''
+        cdef vector[string] vals
+        cdef size_t i, n
         if self._info is None:
-            self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
+            vals = self.thisptr.get_info()
+            n = vals.size()
+            self._info = [vals[i].decode('utf8') for i in range(n)]
         return self._info
 
 cdef class BcfInfo:
@@ -175,27 +201,41 @@ cdef class BcfInfo:
 
     def __contains__(self, key):
         ''' check if key in Info '''
+        if not isinstance(key, str):
+            return False
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(key, &key_len)
         cdef InfoType info_type
-        return self.thisptr.get_type(key.encode('utf8'), info_type)
+        return self.thisptr.get_type(key_ptr, <size_t>key_len, info_type)
 
     def keys(self):
-        return (x.decode('utf8') for x in self.thisptr.get_keys())
+        cdef size_t i, n = self.thisptr.size()
+        cdef tuple names = self._variant._reader._get_info_lookup()
+        return [names[self.thisptr.key_id_at(i)] for i in range(n)]
 
     def values(self):
-        return (self[x] for x in self.keys())
+        cdef size_t i, n = self.thisptr.size()
+        return [self._decode_value(self.thisptr.type_at(i)) for i in range(n)]
 
     def items(self):
-        return ((x, self[x]) for x in self.keys())
+        cdef size_t i, n = self.thisptr.size()
+        cdef tuple names = self._variant._reader._get_info_lookup()
+        return [(names[self.thisptr.key_id_at(i)],
+                 self._decode_value(self.thisptr.type_at(i))) for i in range(n)]
 
     def __iter__(self):
         ''' get the info keys for a variant
         '''
-        return self.keys()
+        return iter(self.keys())
 
     cdef _decode_value(self, InfoType info_type):
         cdef InfoKind datatype = info_type.type
         cdef float f_val
+        cdef uint32_t f_bits
         cdef int32_t i_val
+        cdef vector[float] v_float
+        cdef vector[int32_t] v_int
+        cdef size_t i, n
 
         if datatype == info_missing:
             return None
@@ -212,19 +252,48 @@ cdef class BcfInfo:
         elif datatype == info_vector_string:
             return tuple(self.thisptr.get_string(info_type).decode('utf8').split(','))
         elif datatype == info_vector_float:
-            return tuple(None if isnan(x) else x for x in self.thisptr.get_floats(info_type))
+            if info_type.n_vals == 0:
+                return ()
+            if info_type.n_vals == 1:
+                f_bits = self.thisptr.get_raw_float_bits(info_type)
+                if f_bits == 0x7f800002:
+                    return ()
+                if f_bits == 0x7f800001:
+                    return (None,)
+                memcpy(&f_val, &f_bits, 4)
+                return (f_val,)
+            v_float = self.thisptr.get_floats(info_type)
+            n = v_float.size()
+            return tuple([None if isnan(v_float[i]) else v_float[i] for i in range(n)])
         elif datatype == info_vector_int:
-            return tuple(None if x == INT32_MIN else x for x in self.thisptr.get_ints(info_type))
+            if info_type.n_vals == 0:
+                return ()
+            if info_type.n_vals == 1:
+                i_val = self.thisptr.get_raw_int(info_type)
+                if i_val == INT32_MIN + 1:
+                    return ()
+                return (None if i_val == INT32_MIN else i_val,)
+            v_int = self.thisptr.get_ints(info_type)
+            n = v_int.size()
+            return tuple([None if v_int[i] == INT32_MIN else v_int[i] for i in range(n)])
 
     def get(self, key, default=None):
+        if not isinstance(key, str):
+            return default
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(key, &key_len)
         cdef InfoType info_type
-        if not self.thisptr.get_type(key.encode('utf8'), info_type):
+        if not self.thisptr.get_type(key_ptr, <size_t>key_len, info_type):
             return default
         return self._decode_value(info_type)
 
     def __getitem__(self, _key):
+        if not isinstance(_key, str):
+            raise KeyError(f'unknown INFO field: {_key}')
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(_key, &key_len)
         cdef InfoType info_type
-        if not self.thisptr.get_type(_key.encode('utf8'), info_type):
+        if not self.thisptr.get_type(key_ptr, <size_t>key_len, info_type):
             raise KeyError(f'unknown INFO field: {_key}')
         return self._decode_value(info_type)
 
@@ -245,65 +314,89 @@ cdef class BcfSampleData:
 
     def __contains__(self, key):
         ''' check if key in SampleData '''
+        if not isinstance(key, str):
+            return False
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(key, &key_len)
         cdef FormatType fmt_type
-        return self.thisptr.get_type(key.encode('utf8'), fmt_type)
+        return self.thisptr.get_type(key_ptr, <size_t>key_len, fmt_type)
 
     def keys(self):
-        return (x.decode('utf8') for x in self.thisptr.get_keys())
+        cdef size_t i, n = self.thisptr.size()
+        cdef tuple names = self._variant._reader._get_format_lookup()
+        return [names[self.thisptr.key_id_at(i)] for i in range(n)]
 
     def values(self):
-        return (self[x] for x in self.keys())
+        cdef size_t i, n = self.thisptr.size()
+        return [self._decode_value(self.thisptr.type_at(i)) for i in range(n)]
 
     def items(self):
-        return ((x, self[x]) for x in self.keys())
+        cdef size_t i, n = self.thisptr.size()
+        cdef tuple names = self._variant._reader._get_format_lookup()
+        return [(names[self.thisptr.key_id_at(i)],
+                 self._decode_value(self.thisptr.type_at(i))) for i in range(n)]
 
     def __iter__(self):
         ''' get the format keys for a variant
         '''
-        return self.keys()
+        return iter(self.keys())
 
     cdef _decode_value(self, FormatType fmt_type):
         cdef uint32_t n_per_sample = fmt_type.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples
         cdef tuple shape
-        if n_per_sample > 1:
-            shape = (n_samples, n_per_sample)
-        else:
-            shape = (n_samples,)
+        cdef double[::1] i_arr
+        cdef float[::1] f_arr
+        cdef vector[string] v_str
+        cdef size_t i, n
 
-        cdef vector[int32_t] v_int
-        cdef vector[float] v_float
         if fmt_type.data_type == int8 or fmt_type.data_type == int16 or fmt_type.data_type == int32:
             if n_vals == 0:
-                return np.full(shape, np.nan, dtype=float)
-            v_int = self.thisptr.get_ints(fmt_type)
-            arr = np.asarray(<int32_t [:n_vals]>&v_int[0]).reshape(shape)
-
-            mis_val = -1 if fmt_type.is_geno else INT32_MIN
-            missing = arr == mis_val
-            arr = arr.astype(float)
-            arr[missing] = float('nan')
-            return arr
+                if n_per_sample > 1:
+                    shape = (n_samples, n_per_sample)
+                else:
+                    shape = (n_samples,)
+                return np.full(shape, np.nan, dtype=np.float64)
+            raw_arr = np.empty(n_vals, dtype=np.float64, order='C')
+            i_arr = raw_arr
+            self.thisptr.read_ints(fmt_type, &i_arr[0])
+            return raw_arr.reshape((n_samples, n_per_sample)) if n_per_sample > 1 else raw_arr
         elif fmt_type.data_type == float_:
             if n_vals == 0:
+                if n_per_sample > 1:
+                    shape = (n_samples, n_per_sample)
+                else:
+                    shape = (n_samples,)
                 return np.full(shape, np.nan, dtype=np.float32)
-            v_float = self.thisptr.get_floats(fmt_type)
-            return np.asarray(<float [:n_vals]>&v_float[0]).reshape(shape).copy()
+            raw_arr = np.empty(n_vals, dtype=np.float32, order='C')
+            f_arr = raw_arr
+            self.thisptr.read_floats(fmt_type, &f_arr[0])
+            return raw_arr.reshape((n_samples, n_per_sample)) if n_per_sample > 1 else raw_arr
         elif fmt_type.data_type == char_:
-            return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(fmt_type)]
+            v_str = self.thisptr.get_strings(fmt_type)
+            n = v_str.size()
+            return [tuple(v_str[i].decode('utf8').split(',')) for i in range(n)]
 
         raise ValueError(f'unknown datatype: {<int>fmt_type.data_type}')
 
     def get(self, key, default=None):
+        if not isinstance(key, str):
+            return default
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(key, &key_len)
         cdef FormatType fmt_type
-        if not self.thisptr.get_type(key.encode('utf8'), fmt_type):
+        if not self.thisptr.get_type(key_ptr, <size_t>key_len, fmt_type):
             return default
         return self._decode_value(fmt_type)
 
     def __getitem__(self, _key):
+        if not isinstance(_key, str):
+            raise KeyError(f'unknown FORMAT field: {_key}')
+        cdef Py_ssize_t key_len = 0
+        cdef const char * key_ptr = PyUnicode_AsUTF8AndSize(_key, &key_len)
         cdef FormatType fmt_type
-        if not self.thisptr.get_type(_key.encode('utf8'), fmt_type):
+        if not self.thisptr.get_type(key_ptr, <size_t>key_len, fmt_type):
             raise KeyError(f'unknown FORMAT field: {_key}')
         return self._decode_value(fmt_type)
 
@@ -312,13 +405,13 @@ cdef class BcfSampleData:
         ''' whether genotypes are phased '''
         if self.thisptr.n_samples == 0:
             return np.empty(0, dtype=np.bool_)
-        if not self.thisptr.phase_checked:
-            self.get('GT')
-        if self.thisptr.phase.empty():
+        cdef FormatType fmt_type
+        if not self.thisptr.get_type(b'GT', 2, fmt_type):
             return np.empty(0, dtype=np.bool_)
-
-        arr = np.asarray(<uint8_t [:self.thisptr.phase.size()]>&self.thisptr.phase[0])
-        return arr.astype(np.bool_)
+        raw_arr = np.empty(self.thisptr.n_samples, dtype=np.uint8, order='C')
+        cdef uint8_t[::1] p_arr = raw_arr
+        self.thisptr.read_phase(fmt_type, &p_arr[0])
+        return raw_arr.view(np.bool_)
 
 cdef class BcfVariant:
     cdef Variant thisptr
@@ -335,13 +428,13 @@ cdef class BcfVariant:
     def chrom(self):
         ''' chromosome/contig name
         '''
-        return self.thisptr.chrom.decode('utf8')
+        return self._reader._get_contig_lookup()[self.thisptr.chrom_id]
 
     @property
     def contig(self):
         ''' alias for .chrom attribute
         '''
-        return self.chrom
+        return self._reader._get_contig_lookup()[self.thisptr.chrom_id]
 
     @property
     def pos(self):
@@ -359,9 +452,12 @@ cdef class BcfVariant:
     def alts(self):
         ''' list of alternate alleles
         '''
-        if self.thisptr.alts.size() == 0:
+        cdef size_t i, n = self.thisptr.alts.size()
+        if n == 0:
             return None
-        return tuple(x.decode('utf8') for x in self.thisptr.alts)
+        if n == 1:
+            return (self.thisptr.alts[0].decode('utf8'),)
+        return tuple([self.thisptr.alts[i].decode('utf8') for i in range(n)])
 
     @property
     def id(self):
@@ -383,7 +479,13 @@ cdef class BcfVariant:
     def filter(self):
         ''' list of filter information
         '''
-        return [x.decode('utf8') for x in self.thisptr.filters]
+        cdef size_t i, n = self.thisptr.filter_ids.size()
+        if n == 0:
+            return []
+        cdef tuple names = self._reader._get_filter_lookup()
+        if n == 1:
+            return [names[self.thisptr.filter_ids[0]]]
+        return [names[self.thisptr.filter_ids[i]] for i in range(n)]
 
     @property
     def info(self):
@@ -410,6 +512,10 @@ cdef class BcfReader:
     cdef string path
     cdef bool is_open
     cdef BcfHeader _header
+    cdef tuple _contig_lookup
+    cdef tuple _filter_lookup
+    cdef tuple _info_lookup
+    cdef tuple _format_lookup
     def __cinit__(self, path, index_path=None):
         self.thisptr = NULL
         self.is_open = False
@@ -430,6 +536,26 @@ cdef class BcfReader:
             del self.thisptr
             self.thisptr = NULL
         self.is_open = False
+
+    cdef inline tuple _get_contig_lookup(self):
+        if self._contig_lookup is None:
+            self._contig_lookup = _decode_string_vec(self.thisptr.header.contigs)
+        return self._contig_lookup
+
+    cdef inline tuple _get_filter_lookup(self):
+        if self._filter_lookup is None:
+            self._filter_lookup = _decode_string_vec(self.thisptr.header.filters)
+        return self._filter_lookup
+
+    cdef inline tuple _get_info_lookup(self):
+        if self._info_lookup is None:
+            self._info_lookup = _decode_string_vec(self.thisptr.header.get_info_by_idx())
+        return self._info_lookup
+
+    cdef inline tuple _get_format_lookup(self):
+        if self._format_lookup is None:
+            self._format_lookup = _decode_string_vec(self.thisptr.header.get_formats_by_idx())
+        return self._format_lookup
 
     def close(self):
         ''' close the bcf file '''

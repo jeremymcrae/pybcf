@@ -236,6 +236,22 @@ std::vector<std::string> Header::get_info() const {
   return vals;
 }
 
+std::vector<std::string> Header::get_info_by_idx() const {
+  std::vector<std::string> vals(info.size());
+  for (std::size_t i = 0; i < info.size(); i++) {
+    vals[i] = info[i].id;
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_formats_by_idx() const {
+  std::vector<std::string> vals(format.size());
+  for (std::size_t i = 0; i < format.size(); i++) {
+    vals[i] = format[i].id;
+  }
+  return vals;
+}
+
 std::uint32_t Header::get_contig_id(const std::string & contig) const {
   auto it = contig_ids.find(contig);
   if (it == contig_ids.end()) {

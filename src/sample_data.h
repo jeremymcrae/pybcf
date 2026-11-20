@@ -23,6 +23,7 @@ struct FormatType {
 };
 
 struct NamedFormat {
+  std::uint32_t id_idx;
   const FormatField * field;
   FormatType format;
 };
@@ -37,31 +38,29 @@ class SampleData {
   std::unique_ptr<char[]> buf;
 
   void parse();
-  std::vector<std::int32_t> get_geno(const FormatType & type);
-  std::vector<std::int32_t> parse_8bit_ints(const FormatType & type) const;
-  std::vector<std::int32_t> parse_16bit_ints(const FormatType & type) const;
-  std::vector<std::int32_t> parse_32bit_ints(const FormatType & type) const;
+  void read_geno(const FormatType & type, double * dst) const;
+  void read_8bit_ints(const FormatType & type, double * dst) const;
+  void read_16bit_ints(const FormatType & type, double * dst) const;
+  void read_32bit_ints(const FormatType & type, double * dst) const;
 public:
   SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t n_samples);
   SampleData() = default;
   SampleData(SampleData &&) = default;
   SampleData & operator=(SampleData &&) = default;
-  std::vector<std::string> get_keys();
+
   std::size_t size();
-  const NamedFormat & field_at(std::size_t idx);
+  std::uint32_t key_id_at(std::size_t idx);
+  const FormatType & type_at(std::size_t idx);
   bool get_type(const char * key, std::size_t key_len, FormatType & out);
-  bool get_type(const std::string & key, FormatType & out) {
-    return get_type(key.data(), key.size(), out);
-  }
-  std::vector<std::int32_t> get_ints(const FormatType & type);
-  std::vector<float> get_floats(const FormatType & type) const;
+
+  void read_ints(const FormatType & type, double * dst) const;
+  void read_floats(const FormatType & type, float * dst) const;
+  void read_phase(const FormatType & type, std::uint8_t * dst) const;
   std::vector<std::string> get_strings(const FormatType & type) const;
 
   std::uint32_t n_samples = 0;
-  bool phase_checked = false;
-  std::vector<std::uint8_t> phase;
 };
 
-} // namespace
+} // namespace bcf
 
 #endif

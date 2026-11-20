@@ -9,24 +9,19 @@
 
 namespace bcf {
 
-std::vector<std::string> Info::get_keys() {
-  parse();
-  std::vector<std::string> key_names;
-  key_names.reserve(fields.size());
-  for (const auto & entry : fields) {
-    key_names.push_back(entry.field->id);
-  }
-  return key_names;
-}
-
 std::size_t Info::size() {
   parse();
   return fields.size();
 }
 
-const NamedInfo & Info::field_at(std::size_t idx) {
+std::uint32_t Info::key_id_at(std::size_t idx) {
   parse();
-  return fields[idx];
+  return fields[idx].id_idx;
+}
+
+const InfoType & Info::type_at(std::size_t idx) {
+  parse();
+  return fields[idx].info;
 }
 
 /// @brief scan INFO field descriptors without eagerly decoding values
@@ -51,7 +46,8 @@ void Info::parse() {
         header->info[id_idx].id.empty()) {
       throw std::invalid_argument("unknown INFO ID index: " + std::to_string(id_idx));
     }
-    const InfoField * field = &header->info[id_idx];
+    std::uint32_t uid = static_cast<std::uint32_t>(id_idx);
+    const InfoField * field = &header->info[uid];
 
     Typed type_val(raw, buf_len, buf_idx);
     std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) * type_val.type_size;
@@ -79,14 +75,14 @@ void Info::parse() {
     InfoType info_type = {kind, type_val.type_size, buf_idx, type_val.n_vals};
     bool updated = false;
     for (auto & entry : fields) {
-      if (entry.field == field) {
+      if (entry.id_idx == uid) {
         entry.info = info_type;
         updated = true;
         break;
       }
     }
     if (!updated) {
-      fields.push_back({field, info_type});
+      fields.push_back({uid, field, info_type});
     }
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
@@ -111,9 +107,23 @@ std::int32_t Info::get_int(const InfoType & type) const {
   return parse_int(buf.get(), buf_len, idx, type.type_size);
 }
 
+std::int32_t Info::get_raw_int(const InfoType & type) const {
+  std::uint32_t idx = type.offset;
+  return parse_raw_int(buf.get(), buf_len, idx, type.type_size);
+}
+
 float Info::get_float(const InfoType & type) const {
   std::uint32_t idx = type.offset;
   return parse_float(buf.get(), buf_len, idx);
+}
+
+std::uint32_t Info::get_raw_float_bits(const InfoType & type) const {
+  if (static_cast<std::size_t>(type.offset) + 4 > buf_len) {
+    throw std::invalid_argument("buffer overflow while reading BCF float");
+  }
+  std::uint32_t bits = 0;
+  std::memcpy(&bits, buf.get() + type.offset, 4);
+  return bits;
 }
 
 std::string Info::get_string(const InfoType & type) const {

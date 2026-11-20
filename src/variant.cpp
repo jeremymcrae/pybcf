@@ -89,7 +89,6 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
     const char * buf = shared_buf.get();
 
     chrom_id = static_cast<std::uint32_t>(hdr.chrom_id);
-    chrom = header.contigs[chrom_id];
     pos = rec_pos;
     rlen = hdr.rlen;
 
@@ -111,14 +110,14 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
     if (type_val.n_vals > 0 && !is_int_type(type_val.type)) {
       throw std::invalid_argument("expected integer BCF filter indices");
     }
-    filters.resize(type_val.n_vals);
+    filter_ids.resize(type_val.n_vals);
     for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
       std::int32_t filter_idx = parse_int(buf, shared_len, idx, type_val.type_size);
       if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
           header.filters[filter_idx].empty()) {
         throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
       }
-      filters[i] = header.filters[filter_idx];
+      filter_ids[i] = static_cast<std::uint32_t>(filter_idx);
     }
 
     info = Info(std::move(shared_buf), shared_len, idx, &header, n_info);

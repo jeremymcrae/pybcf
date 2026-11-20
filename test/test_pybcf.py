@@ -1,4 +1,5 @@
 
+import ast
 import gc
 import gzip
 import os
@@ -10,6 +11,8 @@ from pathlib import Path
 import numpy as np
 from pysam import BGZFile, VariantFile
 from pybcf import BcfReader
+import pybcf
+import pybcf.reader as pybcf_reader
 
 def get_pysam_probs(var, alt_idx):
     ''' get unphased biallelic genotype data
@@ -440,6 +443,32 @@ class TestBcfReader(unittest.TestCase):
             gc.collect()
             after = len(os.listdir('/proc/self/fd'))
             self.assertEqual(before, after)
+
+    def test_type_stubs_match_extension(self):
+        ''' check reader.pyi and py.typed exist, parse cleanly, and match Cython classes
+        '''
+        pkg_dir = Path(pybcf.__file__).parent
+        self.assertTrue((pkg_dir / 'py.typed').is_file())
+        stub_path = pkg_dir / 'reader.pyi'
+        self.assertTrue(stub_path.is_file())
+
+        source = stub_path.read_text(encoding='utf8')
+        tree = ast.parse(source, filename=str(stub_path))
+        exec(compile(tree, str(stub_path), 'exec'), {})
+
+        stub_classes = {
+            node.name: {
+                item.name for item in node.body
+                if isinstance(item, ast.FunctionDef) and not item.name.startswith('_')
+            }
+            for node in tree.body if isinstance(node, ast.ClassDef)
+        }
+        runtime_classes = {
+            name: {attr for attr in dir(cls) if not attr.startswith('_')}
+            for name, cls in vars(pybcf_reader).items()
+            if isinstance(cls, type) and not name.startswith('_') and name != 'Path'
+        }
+        self.assertEqual(stub_classes, runtime_classes)
 
     def test_missing_info_ints_and_floats(self):
         ''' check missing scalar/vector INFO ints and floats return None like pysam

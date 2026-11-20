@@ -33,5 +33,11 @@ packages = [
     'pybcf',
 ]
 
+[tool.setuptools.package-data]
+pybcf = [
+    'py.typed',
+    '*.pyi',
+]
+
 [project.urls]
 homepage = 'https://github.com/jeremymcrae/pybcf'

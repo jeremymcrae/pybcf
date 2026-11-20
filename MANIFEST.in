@@ -2,6 +2,8 @@
 include MANIFEST.in
 include pyproject.toml
 include src/pybcf/*.py
+include src/pybcf/*.pyi
+include src/pybcf/py.typed
 include src/pybcf/*.pyx
 # cython generates these while building, so a copy here could be stale
 exclude src/pybcf/*.cpp

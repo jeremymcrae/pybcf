@@ -74,7 +74,7 @@ Header::Header(const std::string & text) {
       continue;
     }
     if (line[1] != '#') {
-      if (line.substr(0, 6).find("CHROM") != std::string::npos) {
+      if (line.rfind("#CHROM", 0) == 0) {
         if (!samples.empty()) {
           throw std::invalid_argument("BCF has two header lines starting with #CHROM!");
         }
@@ -91,7 +91,7 @@ Header::Header(const std::string & text) {
       continue;
     }
 
-    std::string body = trim(line, "#");
+    std::string body = line.substr(2);
     size_t eq = body.find('=');
     if (eq == std::string::npos) {
       continue;
@@ -102,21 +102,23 @@ Header::Header(const std::string & text) {
     }
 
     auto data = parse_delimited(body.substr(eq + 1));
+    const std::string & id = data["ID"];
+    auto idx_it = data.find("IDX");
     if (kind == "contig") {
-      if (data.count("IDX") > 0) {
-        contig_idx = static_cast<std::uint32_t>(std::stoul(data["IDX"]));
+      if (idx_it != data.end()) {
+        contig_idx = static_cast<std::uint32_t>(std::stoul(idx_it->second));
       }
-      contigs[contig_idx] = data["ID"];
-      contig_ids[data["ID"]] = contig_idx;
+      contigs[contig_idx] = id;
+      contig_ids[id] = contig_idx;
       contig_idx += 1;
     } else {
-      if (has_idx_tag && data.count("IDX") == 0) {
-        throw std::invalid_argument("invalid BCF - missing IDX field in " + data["ID"]);
+      if (has_idx_tag && idx_it == data.end()) {
+        throw std::invalid_argument("invalid BCF - missing IDX field in " + id);
       }
-      if (data.count("IDX") > 0) {
-        idx = static_cast<std::uint32_t>(std::stoul(data["IDX"]));
+      if (idx_it != data.end()) {
+        idx = static_cast<std::uint32_t>(std::stoul(idx_it->second));
         has_idx_tag = true;
-      } else if (kind == "FILTER" && data["ID"] == "PASS") {
+      } else if (kind == "FILTER" && id == "PASS") {
         // PASS is implicitly at index 0 when IDX tags are absent.
         continue;
       }
@@ -124,11 +126,11 @@ Header::Header(const std::string & text) {
       if (kind == "INFO") {
         const std::string & num = data["Number"];
         bool is_list = !num.empty() && num != "1" && num != "0";
-        info[idx] = {data["ID"], is_list};
+        info[idx] = {id, is_list};
       } else if (kind == "FORMAT") {
-        format[idx] = data["ID"];
-      } else if (kind == "FILTER" && data["ID"] != "PASS") {
-        filters[idx] = data["ID"];
+        format[idx] = id;
+      } else if (kind == "FILTER" && id != "PASS") {
+        filters[idx] = id;
       }
       idx += 1;
     }

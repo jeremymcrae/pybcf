@@ -1,6 +1,7 @@
 #include "gzreader.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <stdexcept>
@@ -11,6 +12,34 @@
 #endif
 
 namespace bcf {
+
+namespace {
+
+int open_readonly(const char * filepath) {
+#ifdef _WIN32
+  return _open(filepath, _O_RDONLY | _O_BINARY);
+#else
+  return ::open(filepath, O_RDONLY);
+#endif
+}
+
+bool seek_fd(int fd, std::uint64_t pos) {
+#ifdef _WIN32
+  return _lseeki64(fd, static_cast<__int64>(pos), SEEK_SET) >= 0;
+#else
+  return ::lseek(fd, static_cast<off_t>(pos), SEEK_SET) >= 0;
+#endif
+}
+
+void close_fd(int fd) {
+#ifdef _WIN32
+  _close(fd);
+#else
+  ::close(fd);
+#endif
+}
+
+} // namespace
 
 void GzReader::open(const std::string & filepath) {
   close();
@@ -88,31 +117,17 @@ void GzReader::read_exact(void * dst, std::size_t count, const char * err_msg) {
 void GzReader::seek(Offsets offset) {
   close();
 
-#ifdef _WIN32
-  int fd = _open(path.c_str(), _O_RDONLY | _O_BINARY);
-  if (fd < 0 || _lseeki64(fd, static_cast<__int64>(offset.c_offset), SEEK_SET) < 0) {
+  int fd = open_readonly(path.c_str());
+  if (fd < 0 || !seek_fd(fd, offset.c_offset)) {
     if (fd >= 0) {
-      _close(fd);
+      close_fd(fd);
     }
     throw std::invalid_argument("cannot seek within this gzfile");
   }
-#else
-  int fd = ::open(path.c_str(), O_RDONLY);
-  if (fd < 0 || ::lseek(fd, static_cast<off_t>(offset.c_offset), SEEK_SET) < 0) {
-    if (fd >= 0) {
-      ::close(fd);
-    }
-    throw std::invalid_argument("cannot seek within this gzfile");
-  }
-#endif
 
   file = gzdopen(fd, "rb");
   if (file == nullptr) {
-#ifdef _WIN32
-    _close(fd);
-#else
-    ::close(fd);
-#endif
+    close_fd(fd);
     throw std::invalid_argument("cannot seek within this gzfile");
   }
   gzbuffer(file, sizeof(buffer));

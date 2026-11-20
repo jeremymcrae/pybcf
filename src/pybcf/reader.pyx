@@ -102,7 +102,6 @@ cdef class BcfHeader:
     cdef Header * thisptr
     cdef BcfReader _reader
     cdef list _samples, _contigs, _info, _filters, _formats
-    cdef bool samples_done, contigs_done, info_done, filters_done, formats_done
     cdef set_data(self, Header * header, BcfReader reader):
         ''' assigns Header to python class '''
         self.thisptr = header
@@ -112,45 +111,40 @@ cdef class BcfHeader:
     def samples(self):
         ''' list of sample IDs in the BCF
         '''
-        if not self.samples_done:
+        if self._samples is None:
             self._samples = [x.decode('utf8') for x in self.thisptr.samples]
-            self.samples_done = True
         return self._samples
 
     @property
     def contigs(self):
         ''' list of possible contigs in the BCF
         '''
-        if not self.contigs_done:
+        if self._contigs is None:
             self._contigs = [x.decode('utf8') for x in self.thisptr.get_contigs()]
-            self.contigs_done = True
         return self._contigs
 
     @property
     def filters(self):
         ''' list of possible filters in the BCF
         '''
-        if not self.filters_done:
+        if self._filters is None:
             self._filters = [x.decode('utf8') for x in self.thisptr.get_filters()]
-            self.filters_done = True
         return self._filters
 
     @property
     def formats(self):
         ''' list of possible format fields per variant
         '''
-        if not self.formats_done:
+        if self._formats is None:
             self._formats = [x.decode('utf8') for x in self.thisptr.get_formats()]
-            self.formats_done = True
         return self._formats
 
     @property
     def info(self):
         ''' list of possible info fields per variant
         '''
-        if not self.info_done:
+        if self._info is None:
             self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
-            self.info_done = True
         return self._info
 
 cdef class BcfInfo:
@@ -237,18 +231,19 @@ cdef class BcfSampleData:
         cdef uint32_t n_per_sample = fmt_type.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples
+        cdef tuple shape
+        if n_per_sample > 1:
+            shape = (n_samples, n_per_sample)
+        else:
+            shape = (n_samples,)
 
         cdef vector[int32_t] v_int
         cdef vector[float] v_float
         if fmt_type.data_type in (int8, int16, int32):
             if n_vals == 0:
-                if n_per_sample > 1:
-                    return np.empty((n_samples, n_per_sample), dtype=float)
-                return np.empty((n_samples,), dtype=float)
+                return np.empty(shape, dtype=float)
             v_int = self.thisptr.get_ints(fmt_type)
-            arr = np.asarray(<int32_t [:n_vals]>&v_int[0])
-            if n_per_sample > 1:
-                arr = np.reshape(arr, (-1, n_per_sample))
+            arr = np.asarray(<int32_t [:n_vals]>&v_int[0]).reshape(shape)
 
             mis_val = -1 if fmt_type.is_geno else INT32_MIN
             missing = arr == mis_val
@@ -257,14 +252,9 @@ cdef class BcfSampleData:
             return arr
         elif fmt_type.data_type == float_:
             if n_vals == 0:
-                if n_per_sample > 1:
-                    return np.empty((n_samples, n_per_sample), dtype=np.float32)
-                return np.empty((n_samples,), dtype=np.float32)
+                return np.empty(shape, dtype=np.float32)
             v_float = self.thisptr.get_floats(fmt_type)
-            arr = np.asarray(<float [:n_vals]>&v_float[0])
-            if n_per_sample > 1:
-                arr = np.reshape(arr, (-1, n_per_sample))
-            return arr.copy()
+            return np.asarray(<float [:n_vals]>&v_float[0]).reshape(shape).copy()
         elif fmt_type.data_type == char_:
             return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(fmt_type)]
 

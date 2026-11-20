@@ -249,6 +249,107 @@ class TestBcfReader(unittest.TestCase):
                 for field in var_pysam.info:
                     self.assertEqual(var_pysam.info[field], var_pybcf.info[field])
 
+    def test_sample_simd_int_widths_floats_and_phasing(self):
+        ''' check SIMD + scalar FORMAT parsing for int8/int16/int32, floats, phasing, and 16-bit GT
+        '''
+        n_samples = 37  # exercises 32-byte / 16-sample AVX2 loops plus scalar tails
+        sample_names = [f'S{i}' for i in range(n_samples)]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bcf_path = Path(tmpdir) / 'simd_samples.bcf'
+            with VariantFile(bcf_path, 'wb') as out:
+                out.header.contigs.add('chr1', length=10000)
+                out.header.formats.add('GT', 1, 'String', 'Genotype')
+                out.header.formats.add('I8', '.', 'Integer', '8-bit signed/missing ints')
+                out.header.formats.add('I16', '.', 'Integer', '16-bit signed/missing ints')
+                out.header.formats.add('I32', '.', 'Integer', '32-bit signed/missing ints')
+                out.header.formats.add('FL', '.', 'Float', 'Float values with missing/EOV')
+                for s in sample_names:
+                    out.header.add_sample(s)
+
+                # Variant 1: diploid/haploid/missing 8-bit GT + int8/int16/int32/float vectors
+                r1 = out.new_record(contig='chr1', start=100, alleles=('A', 'C', 'G'))
+                for i, s in enumerate(sample_names):
+                    mod = i % 6
+                    if mod == 0:
+                        r1.samples[s]['GT'] = (0, 1)
+                        r1.samples[s].phased = False
+                    elif mod == 1:
+                        r1.samples[s]['GT'] = (1, 2)
+                        r1.samples[s].phased = True
+                    elif mod == 2:
+                        r1.samples[s]['GT'] = (None, None)
+                        r1.samples[s].phased = False
+                    elif mod == 3:
+                        r1.samples[s]['GT'] = (None, None)
+                        r1.samples[s].phased = True
+                    elif mod == 4:
+                        r1.samples[s]['GT'] = (1,)
+                    else:
+                        r1.samples[s]['GT'] = (None,)
+
+                    if i % 5 == 0:
+                        r1.samples[s]['I8'] = (None,)
+                        r1.samples[s]['I16'] = (None,)
+                        r1.samples[s]['I32'] = (None,)
+                        r1.samples[s]['FL'] = (None,)
+                    elif i % 5 == 1:
+                        r1.samples[s]['I8'] = (-5,)
+                        r1.samples[s]['I16'] = (-300,)
+                        r1.samples[s]['I32'] = (1,)  # low 16 bits == 0x0001 regression test
+                        r1.samples[s]['FL'] = (-1.25,)
+                    else:
+                        r1.samples[s]['I8'] = (-120 + i, 50)
+                        r1.samples[s]['I16'] = (-2000 + i, 2000 + i)
+                        r1.samples[s]['I32'] = (-100000 - i, 65537 + i)
+                        r1.samples[s]['FL'] = (float(i) * 0.5, None)
+                out.write(r1)
+
+                # Variant 2: >63 alleles forces 16-bit GT encoding in BCF
+                many_alleles = ('A',) + tuple(f'A{"C" * k}' for k in range(1, 70))
+                r2 = out.new_record(contig='chr1', start=200, alleles=many_alleles)
+                for i, s in enumerate(sample_names):
+                    if i % 3 == 0:
+                        r2.samples[s]['GT'] = (0, 68)
+                        r2.samples[s].phased = True
+                    elif i % 3 == 1:
+                        r2.samples[s]['GT'] = (65,)
+                    else:
+                        r2.samples[s]['GT'] = (None, None)
+                        r2.samples[s].phased = False
+                out.write(r2)
+
+            vcf_pysam = VariantFile(bcf_path)
+            vcf_pybcf = BcfReader(bcf_path)
+            for var_pysam, var_pybcf in zip(vcf_pysam, vcf_pybcf):
+                expected_phased = np.array([smp.phased for smp in var_pysam.samples.values()], dtype=bool)
+                np.testing.assert_array_equal(var_pybcf.samples.phased, expected_phased)
+
+                gt = var_pybcf.samples['GT']
+                for idx, smp in enumerate(var_pysam.samples.values()):
+                    alleles = smp.allele_indices
+                    for j, a in enumerate(alleles):
+                        if a is None:
+                            self.assertTrue(np.isnan(gt[idx, j]))
+                        else:
+                            self.assertEqual(gt[idx, j], float(a))
+                    for j in range(len(alleles), gt.shape[1]):
+                        self.assertTrue(np.isnan(gt[idx, j]))
+
+                for key in ('I8', 'I16', 'I32', 'FL'):
+                    if key not in var_pysam.format:
+                        continue
+                    arr = var_pybcf.samples[key]
+                    for idx, smp in enumerate(var_pysam.samples.values()):
+                        vals = smp[key]
+                        for j, expected in enumerate(vals):
+                            if expected is None:
+                                self.assertTrue(np.isnan(arr[idx, j]))
+                            else:
+                                self.assertAlmostEqual(float(arr[idx, j]), float(expected), places=5)
+                        for j in range(len(vals), arr.shape[1]):
+                            self.assertTrue(np.isnan(arr[idx, j]))
+
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields
     '''

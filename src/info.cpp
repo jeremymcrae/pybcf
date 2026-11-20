@@ -41,12 +41,11 @@ void Info::parse() {
   std::uint32_t buf_idx = 0;
   for (std::uint32_t i = 0; i < n_info; i++) {
     std::int32_t id_idx = parse_typed_int(buf.data(), buf.size(), buf_idx);
-    auto field_it = (id_idx >= 0) ? header->info.find(static_cast<std::uint32_t>(id_idx))
-                                  : header->info.end();
-    if (field_it == header->info.end()) {
+    if (id_idx < 0 || static_cast<std::size_t>(id_idx) >= header->info.size() ||
+        header->info[id_idx].id.empty()) {
       throw std::invalid_argument("unknown INFO ID index: " + std::to_string(id_idx));
     }
-    const InfoField & field = field_it->second;
+    const InfoField & field = header->info[id_idx];
 
     Typed type_val(buf.data(), buf.size(), buf_idx);
     std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) * type_val.type_size;

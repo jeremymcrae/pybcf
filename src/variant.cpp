@@ -46,15 +46,14 @@ bool Variant::read(GzReader & infile, const Header & header) {
     infile.read_exact(buf.data(), shared_len, "truncated BCF variant record");
   }
 
-  auto contig_it = (hdr.chrom_id >= 0) ? header.contigs.find(static_cast<std::uint32_t>(hdr.chrom_id))
-                                       : header.contigs.end();
-  if (contig_it == header.contigs.end()) {
+  if (hdr.chrom_id < 0 || static_cast<std::size_t>(hdr.chrom_id) >= header.contigs.size() ||
+      header.contigs[hdr.chrom_id].empty()) {
     throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
   }
   if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
     throw std::invalid_argument("invalid BCF variant coordinates");
   }
-  chrom = contig_it->second;
+  chrom = header.contigs[hdr.chrom_id];
   pos = hdr.pos0 + 1; // convert 0-based BCF coordinate to 1-based VCF coordinate
   rlen = hdr.rlen;
 
@@ -91,12 +90,11 @@ bool Variant::read(GzReader & infile, const Header & header) {
   filters.resize(type_val.n_vals);
   for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
     std::int32_t filter_idx = parse_int(buf.data(), buf.size(), idx, type_val.type_size);
-    auto filt_it = (filter_idx >= 0) ? header.filters.find(static_cast<std::uint32_t>(filter_idx))
-                                     : header.filters.end();
-    if (filt_it == header.filters.end()) {
+    if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
+        header.filters[filter_idx].empty()) {
       throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
     }
-    filters[i] = filt_it->second;
+    filters[i] = header.filters[filter_idx];
   }
 
   info = Info(buf.data() + idx, buf.size() - idx, &header, n_info);

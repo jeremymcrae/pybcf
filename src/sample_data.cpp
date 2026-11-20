@@ -40,13 +40,13 @@ void SampleData::parse() {
   std::uint32_t buf_idx = 0;
   for (std::uint32_t i = 0; i < n_fmt; i++) {
     std::int32_t format_idx = parse_typed_int(buf.data(), buf.size(), buf_idx);
-    auto fmt_it = (format_idx >= 0) ? header->format.find(static_cast<std::uint32_t>(format_idx))
-                                    : header->format.end();
-    if (fmt_it == header->format.end()) {
+    if (format_idx < 0 || static_cast<std::size_t>(format_idx) >= header->format.size() ||
+        header->format[format_idx].id.empty()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
     }
-    const std::string & key = fmt_it->second;
-    bool is_geno = key == "GT";
+    const FormatField & fmt_field = header->format[format_idx];
+    const std::string & key = fmt_field.id;
+    bool is_geno = fmt_field.is_gt;
 
     Typed type_val(buf.data(), buf.size(), buf_idx);
     if (type_val.type == flag && type_val.n_vals != 0) {

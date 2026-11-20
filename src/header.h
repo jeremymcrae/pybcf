@@ -14,15 +14,20 @@ struct InfoField {
   bool is_flag;
 };
 
+struct FormatField {
+  std::string id;
+  bool is_gt;
+};
+
 class Header {
   std::unordered_map<std::string, std::uint32_t> contig_ids;
 public:
-  Header(const std::string &text);
+  Header(const std::string & text);
   Header() = default;
-  std::unordered_map<std::uint32_t, std::string> contigs;
-  std::unordered_map<std::uint32_t, InfoField> info;
-  std::unordered_map<std::uint32_t, std::string> filters;
-  std::unordered_map<std::uint32_t, std::string> format;
+  std::vector<std::string> contigs;
+  std::vector<InfoField> info;
+  std::vector<std::string> filters;
+  std::vector<FormatField> format;
   std::vector<std::string> samples;
   std::vector<std::string> get_contigs() const;
   std::vector<std::string> get_info() const;

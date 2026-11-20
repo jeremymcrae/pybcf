@@ -1,14 +1,16 @@
 #include <algorithm>
-#include <climits>
-#include <sstream>
 #include <stdexcept>
 
 #include "header.h"
 
 namespace bcf {
 
+namespace {
+
+const unsigned long MAX_HEADER_IDX = 1UL << 22;
+
 /// @brief strip specified characters from the ends of a string
-static std::string trim(const std::string &s, const std::string &vals) {
+std::string trim(const std::string & s, const std::string & vals) {
   size_t start = s.find_first_not_of(vals);
   if (start == std::string::npos) {
     return "";
@@ -17,8 +19,8 @@ static std::string trim(const std::string &s, const std::string &vals) {
   return s.substr(start, (end + 1) - start);
 }
 
-/// @brief parse a non-negative 32-bit IDX attribute from a BCF header tag
-static std::uint32_t parse_idx(const std::string & s) {
+/// @brief parse a non-negative bounded IDX attribute from a BCF header tag
+std::uint32_t parse_idx(const std::string & s) {
   if (s.empty()) {
     throw std::invalid_argument("empty IDX field in BCF header");
   }
@@ -29,7 +31,7 @@ static std::uint32_t parse_idx(const std::string & s) {
   }
   try {
     unsigned long val = std::stoul(s);
-    if (val > UINT32_MAX) {
+    if (val > MAX_HEADER_IDX) {
       throw std::invalid_argument("IDX field out of range in BCF header: " + s);
     }
     return static_cast<std::uint32_t>(val);
@@ -39,7 +41,7 @@ static std::uint32_t parse_idx(const std::string & s) {
 }
 
 /// @brief parse the comma-separated fields of an info/format/contig line
-static std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
+std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
   text = trim(trim(text, " \t\r"), "<>");
   std::unordered_map<std::string, std::string> data;
 
@@ -64,25 +66,14 @@ static std::unordered_map<std::string, std::string> parse_delimited(std::string 
   return data;
 }
 
-template <typename Map>
-static std::vector<std::uint32_t> sorted_keys(const Map & m) {
-  std::vector<std::uint32_t> keys;
-  keys.reserve(m.size());
-  for (const auto & kv : m) {
-    keys.push_back(kv.first);
+template <typename T>
+void ensure_slot(std::vector<T> & vec, std::uint32_t idx) {
+  if (idx >= vec.size()) {
+    vec.resize(static_cast<std::size_t>(idx) + 1);
   }
-  std::sort(keys.begin(), keys.end());
-  return keys;
 }
 
-static std::vector<std::string> sorted_ids(const std::unordered_map<std::uint32_t, std::string> & m) {
-  std::vector<std::string> vals;
-  vals.reserve(m.size());
-  for (std::uint32_t k : sorted_keys(m)) {
-    vals.push_back(m.at(k));
-  }
-  return vals;
-}
+} // namespace
 
 Header::Header(const std::string & text) {
   std::uint32_t idx = 1;
@@ -92,45 +83,59 @@ Header::Header(const std::string & text) {
   bool seen_chrom = false;
   bool seen_pass = false;
 
-  std::istringstream lines(text);
-  std::string line;
-  while (std::getline(lines, line)) {
-    while (!line.empty() && (line.back() == '\r' || line.back() == '\0')) {
-      line.pop_back();
+  size_t pos = 0;
+  while (pos < text.size()) {
+    size_t nl = text.find('\n', pos);
+    size_t line_end = (nl == std::string::npos) ? text.size() : nl;
+    size_t clean_end = line_end;
+    while (clean_end > pos && (text[clean_end - 1] == '\r' || text[clean_end - 1] == '\0')) {
+      clean_end--;
     }
-    if (line.size() < 2 || line[0] != '#') {
+    size_t line_len = clean_end - pos;
+    size_t line_start = pos;
+    pos = (nl == std::string::npos) ? text.size() : (nl + 1);
+
+    if (line_len < 2 || text[line_start] != '#') {
       continue;
     }
-    if (line[1] != '#') {
-      if (line == "#CHROM" || line.rfind("#CHROM\t", 0) == 0) {
+    if (text[line_start + 1] != '#') {
+      if ((line_len == 6 && text.compare(line_start, 6, "#CHROM") == 0) ||
+          (line_len > 6 && text.compare(line_start, 7, "#CHROM\t") == 0)) {
         if (seen_chrom) {
           throw std::invalid_argument("BCF has two header lines starting with #CHROM!");
         }
         seen_chrom = true;
         const std::string marker = "FORMAT\t";
-        size_t pos = line.find(marker);
-        if (pos != std::string::npos) {
-          std::istringstream iss(line.substr(pos + marker.size()));
-          std::string sample;
-          while (std::getline(iss, sample, '\t')) {
-            samples.push_back(sample);
+        size_t fmt_pos = text.find(marker, line_start);
+        if (fmt_pos != std::string::npos && fmt_pos + marker.size() <= clean_end) {
+          size_t s_pos = fmt_pos + marker.size();
+          size_t n_tabs = static_cast<size_t>(
+              std::count(text.begin() + s_pos, text.begin() + clean_end, '\t'));
+          samples.reserve(n_tabs + 1);
+          while (s_pos < clean_end) {
+            size_t tab = text.find('\t', s_pos);
+            if (tab == std::string::npos || tab > clean_end) {
+              tab = clean_end;
+            }
+            samples.emplace_back(text, s_pos, tab - s_pos);
+            s_pos = tab + 1;
           }
         }
       }
       continue;
     }
 
-    std::string body = line.substr(2);
-    size_t eq = body.find('=');
-    if (eq == std::string::npos) {
+    size_t body_start = line_start + 2;
+    size_t eq = text.find('=', body_start);
+    if (eq == std::string::npos || eq >= clean_end) {
       continue;
     }
-    std::string kind = body.substr(0, eq);
+    std::string kind(text, body_start, eq - body_start);
     if (kind != "contig" && kind != "INFO" && kind != "FILTER" && kind != "FORMAT") {
       continue;
     }
 
-    auto data = parse_delimited(body.substr(eq + 1));
+    auto data = parse_delimited(text.substr(eq + 1, clean_end - (eq + 1)));
     auto id_it = data.find("ID");
     if (id_it == data.end() || id_it->second.empty()) {
       throw std::invalid_argument("missing ID field in BCF header");
@@ -141,6 +146,7 @@ Header::Header(const std::string & text) {
       if (idx_it != data.end()) {
         contig_idx = parse_idx(idx_it->second);
       }
+      ensure_slot(contigs, contig_idx);
       contigs[contig_idx] = id;
       contig_ids[id] = contig_idx;
       contig_idx += 1;
@@ -164,10 +170,13 @@ Header::Header(const std::string & text) {
         const std::string & num = data["Number"];
         bool is_list = !num.empty() && num != "1" && num != "0";
         bool is_flag = data["Type"] == "Flag" || num == "0";
+        ensure_slot(info, idx);
         info[idx] = {id, is_list, is_flag};
       } else if (kind == "FORMAT") {
-        format[idx] = id;
+        ensure_slot(format, idx);
+        format[idx] = {id, id == "GT"};
       } else if (kind == "FILTER") {
+        ensure_slot(filters, idx);
         filters[idx] = id;
         if (id == "PASS") {
           seen_pass = true;
@@ -177,20 +186,52 @@ Header::Header(const std::string & text) {
     }
   }
 
-  if (!seen_pass && filters.find(0) == filters.end()) {
+  if (!seen_pass && (filters.empty() || filters[0].empty())) {
+    ensure_slot(filters, 0);
     filters[0] = "PASS";
   }
 }
 
-std::vector<std::string> Header::get_contigs() const { return sorted_ids(contigs); }
-std::vector<std::string> Header::get_filters() const { return sorted_ids(filters); }
-std::vector<std::string> Header::get_formats() const { return sorted_ids(format); }
+std::vector<std::string> Header::get_contigs() const {
+  std::vector<std::string> vals;
+  vals.reserve(contigs.size());
+  for (const auto & s : contigs) {
+    if (!s.empty()) {
+      vals.push_back(s);
+    }
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_filters() const {
+  std::vector<std::string> vals;
+  vals.reserve(filters.size());
+  for (const auto & s : filters) {
+    if (!s.empty()) {
+      vals.push_back(s);
+    }
+  }
+  return vals;
+}
+
+std::vector<std::string> Header::get_formats() const {
+  std::vector<std::string> vals;
+  vals.reserve(format.size());
+  for (const auto & f : format) {
+    if (!f.id.empty()) {
+      vals.push_back(f.id);
+    }
+  }
+  return vals;
+}
 
 std::vector<std::string> Header::get_info() const {
   std::vector<std::string> vals;
   vals.reserve(info.size());
-  for (std::uint32_t k : sorted_keys(info)) {
-    vals.push_back(info.at(k).id);
+  for (const auto & f : info) {
+    if (!f.id.empty()) {
+      vals.push_back(f.id);
+    }
   }
   return vals;
 }

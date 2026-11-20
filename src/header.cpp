@@ -85,11 +85,11 @@ static std::vector<std::string> sorted_ids(const std::unordered_map<std::uint32_
 }
 
 Header::Header(const std::string & text) {
-  filters[0] = "PASS";
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
   bool has_idx_tag = false;
   bool seen_chrom = false;
+  bool seen_pass = false;
 
   std::istringstream lines(text);
   std::string line;
@@ -101,7 +101,7 @@ Header::Header(const std::string & text) {
       continue;
     }
     if (line[1] != '#') {
-      if (line.rfind("#CHROM", 0) == 0) {
+      if (line == "#CHROM" || line.rfind("#CHROM\t", 0) == 0) {
         if (seen_chrom) {
           throw std::invalid_argument("BCF has two header lines starting with #CHROM!");
         }
@@ -130,7 +130,11 @@ Header::Header(const std::string & text) {
     }
 
     auto data = parse_delimited(body.substr(eq + 1));
-    const std::string & id = data["ID"];
+    auto id_it = data.find("ID");
+    if (id_it == data.end() || id_it->second.empty()) {
+      throw std::invalid_argument("missing ID field in BCF header");
+    }
+    const std::string & id = id_it->second;
     auto idx_it = data.find("IDX");
     if (kind == "contig") {
       if (idx_it != data.end()) {
@@ -158,11 +162,18 @@ Header::Header(const std::string & text) {
         info[idx] = {id, is_list, is_flag};
       } else if (kind == "FORMAT") {
         format[idx] = id;
-      } else if (kind == "FILTER" && id != "PASS") {
+      } else if (kind == "FILTER") {
         filters[idx] = id;
+        if (id == "PASS") {
+          seen_pass = true;
+        }
       }
       idx += 1;
     }
+  }
+
+  if (!seen_pass && filters.find(0) == filters.end()) {
+    filters[0] = "PASS";
   }
 }
 

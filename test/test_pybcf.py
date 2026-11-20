@@ -188,9 +188,11 @@ class TestBcfReader(unittest.TestCase):
         header_text = (
             '##fileformat=VCFv4.2\n'
             '\n'
-            '##FILTER=<ID=PASS,Description="All filters passed",IDX=0>\n'
+            '#CHROMOSOME_NOTE=ignored single-hash comment\n'
+            '##FILTER=<ID=LowQual,Description="Low quality",IDX=1>\n'
+            '##FILTER=<ID=PASS,Description="All filters passed",IDX=5>\n'
             '##contig=<ID=chr1,length=1000>\n'
-            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, ID=FAKE_ID, and slash \\\\",IDX=1>\n'
+            '##INFO=<ID=REAL_ID,Number=1,Type=Integer,Description="has comma, ID=FAKE_ID, and slash \\\\",IDX=2>\n'
             '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
             '\x00'
         ).encode('utf8')
@@ -208,13 +210,14 @@ class TestBcfReader(unittest.TestCase):
             bcf = BcfReader(bcf_path)
             self.assertEqual(bcf.header.contigs, ['chr1'])
             self.assertEqual(bcf.header.info, ['REAL_ID'])
-            self.assertEqual(bcf.header.filters, ['PASS'])
+            self.assertEqual(bcf.header.filters, ['LowQual', 'PASS'])
             self.assertEqual(list(bcf), [])
 
             for bad_hdr in (
                 '##fileformat=VCFv4.2\n#CHROM\tPOS\n#CHROM\tPOS\n\x00',
                 '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=-1>\n#CHROM\tPOS\n\x00',
                 '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=99999999999999999999>\n#CHROM\tPOS\n\x00',
+                '##fileformat=VCFv4.2\n##INFO=<Number=1,Type=Integer>\n#CHROM\tPOS\n\x00',
             ):
                 bad_path = Path(tmpdir) / 'bad_hdr.bcf'
                 write_header_bcf(bad_path, bad_hdr.encode('utf8'))
@@ -589,6 +592,31 @@ class TestBcfReader(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 list(BcfReader(bad_shared_bcf))
+
+            # Corrupt pos0 (INT32_MAX), non-string varid, or non-integer GT must raise ValueError
+            gt_hdr = (
+                '##fileformat=VCFv4.2\n'
+                '##contig=<ID=chr1,length=1000>\n'
+                '##FORMAT=<ID=GT,Number=1,Type=String,Description="GT">\n'
+                '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n\x00'
+            ).encode('utf8')
+            for bad_shared, bad_indiv, check_samples in (
+                # pos0 == INT32_MAX (would overflow signed int32 on pos0 + 1)
+                (struct.pack('<iiiIII', 0, 0x7FFFFFFF, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17A\x00', b'', False),
+                # varid encoded as int8 instead of char_
+                (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, 0) + b'\x11\x05\x17A\x00', b'', False),
+                # GT encoded as char_ instead of integer
+                (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, (1 << 24) | 1) + b'\x07\x17A\x00',
+                 b'\x11\x01\x17A', True),
+            ):
+                bad_rec_bcf = Path(tmpdir) / 'bad_rec.bcf'
+                with gzip.open(bad_rec_bcf, 'wb') as gz:
+                    gz.write(b'BCF\x02\x02' + struct.pack('<I', len(gt_hdr)) + gt_hdr)
+                    gz.write(struct.pack('<II', len(bad_shared), len(bad_indiv)) + bad_shared + bad_indiv)
+                with self.assertRaises(ValueError):
+                    rec = next(BcfReader(bad_rec_bcf))
+                    if check_samples:
+                        _ = rec.samples['GT']
 
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields

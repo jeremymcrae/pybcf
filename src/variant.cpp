@@ -51,6 +51,9 @@ bool Variant::read(GzReader & infile, const Header & header) {
   if (contig_it == header.contigs.end()) {
     throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
   }
+  if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
+    throw std::invalid_argument("invalid BCF variant coordinates");
+  }
   chrom = contig_it->second;
   pos = hdr.pos0 + 1; // convert 0-based BCF coordinate to 1-based VCF coordinate
   rlen = hdr.rlen;
@@ -70,19 +73,18 @@ bool Variant::read(GzReader & infile, const Header & header) {
   std::uint32_t n_fmt = hdr.n_fmt_sample >> 24;
 
   std::uint32_t idx = 0;
-  Typed type_val(buf.data(), buf.size(), idx);
-  varid = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
-
-  type_val = Typed(buf.data(), buf.size(), idx);
-  ref = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
+  varid = parse_typed_string(buf.data(), buf.size(), idx);
+  ref = parse_typed_string(buf.data(), buf.size(), idx);
 
   alts.resize(n_alleles - 1);
   for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
-    type_val = Typed(buf.data(), buf.size(), idx);
-    alts[i] = parse_string(buf.data(), buf.size(), idx, type_val.n_vals);
+    alts[i] = parse_typed_string(buf.data(), buf.size(), idx);
   }
 
-  type_val = Typed(buf.data(), buf.size(), idx);
+  Typed type_val(buf.data(), buf.size(), idx);
+  if (type_val.n_vals > 0 && !is_int_type(type_val.type)) {
+    throw std::invalid_argument("expected integer BCF filter indices");
+  }
   filters.resize(type_val.n_vals);
   for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
     std::int32_t filter_idx = parse_int(buf.data(), buf.size(), idx, type_val.type_size);

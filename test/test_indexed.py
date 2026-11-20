@@ -147,6 +147,8 @@ class TestIndexed(unittest.TestCase):
         
         with self.assertRaises(ValueError):
             bcf.fetch(chrom, 10, 9)
+        with self.assertRaises(ValueError):
+            bcf.fetch(chrom, -1, 10)
         
         # but we can still iterate, since the fetch didn't succeed
         iterated = list(bcf)

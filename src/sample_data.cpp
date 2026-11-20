@@ -39,8 +39,7 @@ void SampleData::parse() {
   fields.reserve(n_fmt);
   std::uint32_t buf_idx = 0;
   for (std::uint32_t i = 0; i < n_fmt; i++) {
-    Typed type_val(buf.data(), buf.size(), buf_idx);
-    std::int32_t format_idx = parse_int(buf.data(), buf.size(), buf_idx, type_val.type_size);
+    std::int32_t format_idx = parse_typed_int(buf.data(), buf.size(), buf_idx);
     auto fmt_it = (format_idx >= 0) ? header->format.find(static_cast<std::uint32_t>(format_idx))
                                     : header->format.end();
     if (fmt_it == header->format.end()) {
@@ -49,7 +48,13 @@ void SampleData::parse() {
     const std::string & key = fmt_it->second;
     bool is_geno = key == "GT";
 
-    type_val = Typed(buf.data(), buf.size(), buf_idx);
+    Typed type_val(buf.data(), buf.size(), buf_idx);
+    if (type_val.type == flag && type_val.n_vals != 0) {
+      throw std::invalid_argument("invalid BCF FORMAT flag length");
+    }
+    if (is_geno && !is_int_type(type_val.type)) {
+      throw std::invalid_argument("GT field must be encoded as integer");
+    }
     std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) *
                                 static_cast<std::uint64_t>(type_val.type_size) *
                                 static_cast<std::uint64_t>(n_samples);
@@ -192,8 +197,7 @@ __attribute__((target("avx2")))
 static std::uint64_t parse_geno_avx2(const char * src, std::int32_t * dst, std::uint8_t * phase, std::uint64_t max_n) {
   const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
   const __m256i sub = _mm256_set1_epi8(1);
-  const __m256i miss_byte = _mm256_set1_epi8(static_cast<char>(0x80));
-  const __m256i eov_byte = _mm256_set1_epi8(static_cast<char>(0x81));
+  const __m256i zero = _mm256_setzero_si256();
   const __m128i one = _mm_set1_epi8(1);
   const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
   const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
@@ -205,10 +209,8 @@ static std::uint64_t parse_geno_avx2(const char * src, std::int32_t * dst, std::
     __m256i geno = _mm256_and_si256(initial, mask_geno);
     geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
 
-    // set BCF missing (0x80) and end-of-vector (0x81) entries to -1 (0xff)
-    __m256i missed = _mm256_or_si256(_mm256_cmpeq_epi8(initial, miss_byte),
-                                     _mm256_cmpeq_epi8(initial, eov_byte));
-    geno = _mm256_or_si256(geno, missed);
+    // set BCF missing (0x80) and end-of-vector (0x81) entries (signed < 0) to -1 (0xff)
+    geno = _mm256_or_si256(geno, _mm256_cmpgt_epi8(zero, initial));
 
     __m128i low = _mm256_castsi256_si128(geno);
     __m128i hi = _mm256_extracti128_si256(geno, 1);

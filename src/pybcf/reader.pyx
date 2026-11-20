@@ -3,6 +3,7 @@ from pathlib import Path
 
 from libcpp cimport bool
 from libc.math cimport isnan
+from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
 from libcpp.string cimport string
 from libcpp.vector cimport vector
@@ -56,6 +57,7 @@ cdef extern from 'info.h' namespace 'bcf':
     cdef cppclass Info:
         # declare class constructor and methods
         Info() except +
+        size_t size() except +
         vector[string] get_keys() except +
         bool get_type(const string &, InfoType &) except +
         int32_t get_int(uint32_t offset) except +
@@ -76,11 +78,12 @@ cdef extern from 'sample_data.h' namespace 'bcf':
     cdef cppclass SampleData:
         # declare class constructor and methods
         SampleData() except +
+        size_t size() except +
         vector[string] get_keys() except +
         bool get_type(const string &, FormatType &) except +
-        vector[int32_t] get_ints(FormatType &) except +
-        vector[float] get_floats(FormatType &) except +
-        vector[string] get_strings(FormatType &) except +
+        vector[int32_t] get_ints(const FormatType &) except +
+        vector[float] get_floats(const FormatType &) except +
+        vector[string] get_strings(const FormatType &) except +
         uint32_t n_samples
         bool phase_checked
         vector[uint8_t] phase
@@ -156,6 +159,9 @@ cdef class BcfInfo:
         self.thisptr = info
         self._variant = variant
 
+    def __len__(self):
+        return self.thisptr.size()
+
     def __contains__(self, key):
         ''' check if key in Info '''
         cdef InfoType info_type
@@ -167,18 +173,15 @@ cdef class BcfInfo:
     def values(self):
         return (self[x] for x in self.keys())
 
+    def items(self):
+        return ((x, self[x]) for x in self.keys())
+
     def __iter__(self):
         ''' get the info keys for a variant
         '''
-        for x in self.keys():
-            yield x
+        return self.keys()
 
-    def __getitem__(self, _key):
-        cdef string key = _key.encode('utf8')
-        cdef InfoType info_type
-        if not self.thisptr.get_type(key, info_type):
-            raise KeyError(f'unknown INFO field: {_key}')
-
+    cdef _decode_value(self, InfoType info_type):
         cdef InfoKind datatype = info_type.type
         cdef uint32_t offset = info_type.offset
         cdef float f_val
@@ -201,6 +204,18 @@ cdef class BcfInfo:
         elif datatype == info_vector_int:
             return tuple(None if x == INT32_MIN else x for x in self.thisptr.get_ints(offset))
 
+    def get(self, key, default=None):
+        cdef InfoType info_type
+        if not self.thisptr.get_type(key.encode('utf8'), info_type):
+            return default
+        return self._decode_value(info_type)
+
+    def __getitem__(self, _key):
+        cdef InfoType info_type
+        if not self.thisptr.get_type(_key.encode('utf8'), info_type):
+            raise KeyError(f'unknown INFO field: {_key}')
+        return self._decode_value(info_type)
+
 cdef class BcfSampleData:
     cdef SampleData * thisptr
     cdef BcfVariant _variant
@@ -208,6 +223,9 @@ cdef class BcfSampleData:
         ''' assigns SampleData to python class '''
         self.thisptr = data
         self._variant = variant
+
+    def __len__(self):
+        return self.thisptr.size()
 
     def __contains__(self, key):
         ''' check if key in SampleData '''
@@ -220,17 +238,15 @@ cdef class BcfSampleData:
     def values(self):
         return (self[x] for x in self.keys())
 
+    def items(self):
+        return ((x, self[x]) for x in self.keys())
+
     def __iter__(self):
         ''' get the format keys for a variant
         '''
-        for x in self.keys():
-            yield x
+        return self.keys()
 
-    def __getitem__(self, _key):
-        cdef string key = _key.encode('utf8')
-        cdef FormatType fmt_type
-        if not self.thisptr.get_type(key, fmt_type):
-            raise KeyError(f'unknown FORMAT field: {_key}')
+    cdef _decode_value(self, FormatType fmt_type):
         cdef uint32_t n_per_sample = fmt_type.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples
@@ -263,13 +279,25 @@ cdef class BcfSampleData:
 
         raise ValueError(f'unknown datatype: {<int>fmt_type.data_type}')
 
+    def get(self, key, default=None):
+        cdef FormatType fmt_type
+        if not self.thisptr.get_type(key.encode('utf8'), fmt_type):
+            return default
+        return self._decode_value(fmt_type)
+
+    def __getitem__(self, _key):
+        cdef FormatType fmt_type
+        if not self.thisptr.get_type(_key.encode('utf8'), fmt_type):
+            raise KeyError(f'unknown FORMAT field: {_key}')
+        return self._decode_value(fmt_type)
+
     @property
     def phased(self):
         ''' whether genotypes are phased '''
         if self.thisptr.n_samples == 0:
             return np.empty(0, dtype=np.bool_)
         if not self.thisptr.phase_checked:
-            self['GT']
+            self.get('GT')
         if self.thisptr.phase.empty():
             return np.empty(0, dtype=np.bool_)
 
@@ -384,7 +412,8 @@ cdef class BcfReader:
             self.thisptr = NULL
         self.is_open = False
 
-    def __close(self):
+    def close(self):
+        ''' close the bcf file '''
         if self.is_open and self.thisptr != NULL:
             self.thisptr.close()
         self.is_open = False
@@ -443,5 +472,5 @@ cdef class BcfReader:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.__close()
+        self.close()
         return False

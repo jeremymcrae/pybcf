@@ -334,22 +334,32 @@ class TestBcfReader(unittest.TestCase):
                         r2.samples[s].phased = False
                 out.write(r2)
 
+                # Variant 3: samples present without GT field in FORMAT
+                r3 = out.new_record(contig='chr1', start=300, alleles=('A', 'T'))
+                for i, s in enumerate(sample_names):
+                    r3.samples[s]['I8'] = (i % 10, 1)
+                out.write(r3)
+
             vcf_pysam = VariantFile(bcf_path)
             vcf_pybcf = BcfReader(bcf_path)
             for var_pysam, var_pybcf in zip(vcf_pysam, vcf_pybcf):
-                expected_phased = np.array([smp.phased for smp in var_pysam.samples.values()], dtype=bool)
-                np.testing.assert_array_equal(var_pybcf.samples.phased, expected_phased)
+                if 'GT' in var_pysam.format:
+                    expected_phased = np.array([smp.phased for smp in var_pysam.samples.values()], dtype=bool)
+                    np.testing.assert_array_equal(var_pybcf.samples.phased, expected_phased)
 
-                gt = var_pybcf.samples['GT']
-                for idx, smp in enumerate(var_pysam.samples.values()):
-                    alleles = smp.allele_indices
-                    for j, a in enumerate(alleles):
-                        if a is None:
+                    gt = var_pybcf.samples['GT']
+                    for idx, smp in enumerate(var_pysam.samples.values()):
+                        alleles = smp.allele_indices
+                        for j, a in enumerate(alleles):
+                            if a is None:
+                                self.assertTrue(np.isnan(gt[idx, j]))
+                            else:
+                                self.assertEqual(gt[idx, j], float(a))
+                        for j in range(len(alleles), gt.shape[1]):
                             self.assertTrue(np.isnan(gt[idx, j]))
-                        else:
-                            self.assertEqual(gt[idx, j], float(a))
-                    for j in range(len(alleles), gt.shape[1]):
-                        self.assertTrue(np.isnan(gt[idx, j]))
+                else:
+                    self.assertEqual(var_pybcf.samples.phased.dtype, np.bool_)
+                    self.assertEqual(len(var_pybcf.samples.phased), 0)
 
                 for key in ('I8', 'I16', 'I32', 'FL'):
                     if key not in var_pysam.format:
@@ -382,13 +392,25 @@ class TestBcfReader(unittest.TestCase):
         # Variants and header remain usable after exiting `with`, while further reads fail cleanly
         with BcfReader(sample_bcf) as bcf:
             var = next(bcf)
-        self.assertGreater(len(list(var.info)), 0)
-        for k in var.info:
-            _ = var.info[k]
-        self.assertEqual(var.samples['GT'].shape, gt.shape)
+        self.assertGreater(len(var.info), 0)
+        self.assertEqual(len(var.info), len(list(var.info)))
+        self.assertEqual(dict(var.info.items()), {k: var.info[k] for k in var.info})
+        self.assertEqual(len(var.samples), len(list(var.samples)))
+        sample_items = list(var.samples.items())
+        self.assertEqual([k for k, _ in sample_items], list(var.samples))
+        np.testing.assert_array_equal(var.samples.get('GT'), gt)
         self.assertEqual(bcf.header.contigs, contigs)
         with self.assertRaises(ValueError):
             next(bcf)
+
+        # Explicit close() is idempotent and prevents further iteration or fetch
+        explicit_bcf = BcfReader(sample_bcf)
+        explicit_bcf.close()
+        explicit_bcf.close()
+        with self.assertRaises(ValueError):
+            next(explicit_bcf)
+        with self.assertRaises(ValueError):
+            explicit_bcf.fetch(contigs[0])
 
         # Sites-only BCF has 0 samples; phased should return an empty bool array
         sites_var = next(BcfReader(sites_bcf))
@@ -457,9 +479,15 @@ class TestBcfReader(unittest.TestCase):
         sample_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
         var = next(BcfReader(sample_bcf))
         self.assertFalse('NO_SUCH_INFO' in var.info)
+        self.assertIsNone(var.info.get('NO_SUCH_INFO'))
+        self.assertEqual(var.info.get('NO_SUCH_INFO', 'fallback'), 'fallback')
+        first_info_key = next(iter(var.info))
+        self.assertEqual(var.info.get(first_info_key), var.info[first_info_key])
         with self.assertRaises(KeyError):
             _ = var.info['NO_SUCH_INFO']
         self.assertFalse('NO_SUCH_FMT' in var.samples)
+        self.assertIsNone(var.samples.get('NO_SUCH_FMT'))
+        self.assertEqual(var.samples.get('NO_SUCH_FMT', 'fallback'), 'fallback')
         with self.assertRaises(KeyError):
             _ = var.samples['NO_SUCH_FMT']
 

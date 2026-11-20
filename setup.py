@@ -1,5 +1,4 @@
 
-import io
 from pathlib import Path
 from setuptools import setup
 import subprocess
@@ -82,29 +81,7 @@ ext = cythonize([
         language='c++'),
     ])
 
-setup(name='pybcf',
-    description='Package for loading data from bcf files',
-    long_description=io.open('README.md', encoding='utf-8').read(),
-    long_description_content_type='text/markdown',
-    version='1.3.7',
-    author='Jeremy McRae',
-    author_email='jmcrae@illumina.com',
-    license="MIT",
-    url='https://github.com/jeremymcrae/pybcf',
-    packages=['pybcf'],
+setup(
     package_dir={'': 'src'},
-    install_requires=[
-        'numpy',
-    ],
-    extras_require={
-        'test': [
-            'pysam',
-         ],
-    },
-    classifiers=[
-        'Development Status :: 4 - Beta',
-        'Topic :: Scientific/Engineering :: Bio-Informatics',
-    ],
     ext_modules=ext,
-    test_loader='unittest:TestLoader',
     )

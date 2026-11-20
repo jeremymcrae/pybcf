@@ -83,7 +83,7 @@ void Info::parse() {
   std::vector<char>().swap(buf);
 }
 
-InfoType Info::get_type(std::string &key) {
+bool Info::get_type(const std::string & key, InfoType & out) {
   if (!is_parsed) {
     parse();
     is_parsed = true;
@@ -91,9 +91,10 @@ InfoType Info::get_type(std::string &key) {
 
   auto it = keys.find(key);
   if (it == keys.end()) {
-    throw std::invalid_argument("unknown info field: " + key);
+    return false;
   }
-  return it->second;
+  out = it->second;
+  return true;
 }
 
 }

@@ -41,7 +41,7 @@ public:
   }
   Info() = default;
   std::vector<std::string> get_keys();
-  InfoType get_type(std::string &key);
+  bool get_type(const std::string & key, InfoType & out);
 
   std::int32_t get_int(std::uint32_t offset) const { return scalar_ints.at(offset); }
   float get_float(std::uint32_t offset) const { return scalar_floats.at(offset); }

@@ -1,6 +1,5 @@
 from importlib.metadata import version
 
-__name__ = 'pybcf'
-__version__ = version(__name__)
+__version__ = version('pybcf')
 
 from pybcf.reader import BcfReader

@@ -436,6 +436,61 @@ class TestBcfReader(unittest.TestCase):
             with self.assertRaises(ValueError):
                 list(BcfReader(truncated_path))
 
+    def test_key_lookup_and_corrupt_record_errors(self):
+        ''' check missing INFO/FORMAT keys return False/KeyError while corrupt records raise ValueError
+        '''
+        sample_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
+        var = next(BcfReader(sample_bcf))
+        self.assertFalse('NO_SUCH_INFO' in var.info)
+        with self.assertRaises(KeyError):
+            _ = var.info['NO_SUCH_INFO']
+        self.assertFalse('NO_SUCH_FMT' in var.samples)
+        with self.assertRaises(KeyError):
+            _ = var.samples['NO_SUCH_FMT']
+
+        header_text = (
+            '##fileformat=VCFv4.2\n'
+            '##FILTER=<ID=PASS,Description="All filters passed">\n'
+            '##contig=<ID=chr1,length=1000>\n'
+            '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">\n'
+            '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+            '\x00'
+        ).encode('utf8')
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Record with corrupt INFO ID index (99) must raise ValueError on `in` and `[]`
+            bad_info_bcf = Path(tmpdir) / 'bad_info.bcf'
+            shared_info = (
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 1, 0)
+                + b'\x07'      # empty varid
+                + b'\x17A'     # ref = "A"
+                + b'\x00'      # empty filters
+                + b'\x11\x63\x00'  # INFO ID index 99 (unknown), flag value
+            )
+            with gzip.open(bad_info_bcf, 'wb') as gz:
+                gz.write(b'BCF\x02\x02' + struct.pack('<I', len(header_text)) + header_text)
+                gz.write(struct.pack('<II', len(shared_info), 0) + shared_info)
+
+            bad_var = next(BcfReader(bad_info_bcf))
+            with self.assertRaises(ValueError):
+                _ = 'DP' in bad_var.info
+            with self.assertRaises(ValueError):
+                _ = bad_var.info['DP']
+
+            # Record with overflowing string length in shared block must raise ValueError, not StopIteration
+            bad_shared_bcf = Path(tmpdir) / 'bad_shared.bcf'
+            shared_overflow = (
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 0, 0)
+                + b'\x07'      # empty varid
+                + b'\x57A'     # claims 5-byte ref string with only 1 byte left
+            )
+            with gzip.open(bad_shared_bcf, 'wb') as gz:
+                gz.write(b'BCF\x02\x02' + struct.pack('<I', len(header_text)) + header_text)
+                gz.write(struct.pack('<II', len(shared_overflow), 0) + shared_overflow)
+
+            with self.assertRaises(ValueError):
+                list(BcfReader(bad_shared_bcf))
+
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields
     '''

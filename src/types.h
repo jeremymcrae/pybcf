@@ -47,7 +47,7 @@ public:
       std::uint8_t next = byte & 0x0F;
       if (next == int8) {
         if (static_cast<std::size_t>(idx) + 1 > buf_len) {
-          throw std::out_of_range("buffer overflow while reading BCF vector length");
+          throw std::invalid_argument("buffer overflow while reading BCF vector length");
         }
         std::uint8_t count = 0;
         std::memcpy(&count, buf + idx, 1);
@@ -55,7 +55,7 @@ public:
         idx += 1;
       } else if (next == int16) {
         if (static_cast<std::size_t>(idx) + 2 > buf_len) {
-          throw std::out_of_range("buffer overflow while reading BCF vector length");
+          throw std::invalid_argument("buffer overflow while reading BCF vector length");
         }
         std::uint16_t count = 0;
         std::memcpy(&count, buf + idx, 2);
@@ -63,7 +63,7 @@ public:
         idx += 2;
       } else if (next == int32) {
         if (static_cast<std::size_t>(idx) + 4 > buf_len) {
-          throw std::out_of_range("buffer overflow while reading BCF vector length");
+          throw std::invalid_argument("buffer overflow while reading BCF vector length");
         }
         std::uint32_t count = 0;
         std::memcpy(&count, buf + idx, 4);
@@ -81,7 +81,7 @@ public:
   // get a single byte from a char array, and increment the index
   std::uint8_t get_byte(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
     if (idx >= buf_len) {
-      throw std::out_of_range("buffer overflow while reading BCF type descriptor");
+      throw std::invalid_argument("buffer overflow while reading BCF type descriptor");
     }
     std::uint8_t byte = 0;
     std::memcpy(&byte, buf + idx, 1);
@@ -118,7 +118,7 @@ inline bool is_bcf_float_missing(std::uint32_t bits) {
 /// @return value as 32-bit int (missing and end-of-vector mapped to INT32_MIN)
 inline std::int32_t parse_int(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint8_t type_size) {
   if (static_cast<std::size_t>(idx) + type_size > buf_len) {
-    throw std::out_of_range("buffer overflow while reading BCF integer");
+    throw std::invalid_argument("buffer overflow while reading BCF integer");
   }
   // There are two types of missing values: 1) the normal missing value (0x80,
   // 0x8000, 0x80000000), and an end-of-vector value (introduced in BCFv2.2:
@@ -151,7 +151,7 @@ inline std::int32_t parse_int(const char * buf, std::size_t buf_len, std::uint32
 /// @return value as float (BCF signaling-NaN missing/EOV mapped to quiet NaN)
 inline float parse_float(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
   if (static_cast<std::size_t>(idx) + 4 > buf_len) {
-    throw std::out_of_range("buffer overflow while reading BCF float");
+    throw std::invalid_argument("buffer overflow while reading BCF float");
   }
   std::uint32_t bits = 0;
   std::memcpy(&bits, buf + idx, 4);
@@ -172,7 +172,7 @@ inline float parse_float(const char * buf, std::size_t buf_len, std::uint32_t & 
 /// @return value as string
 inline std::string parse_string(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint32_t size) {
   if (static_cast<std::size_t>(idx) + size > buf_len) {
-    throw std::out_of_range("buffer overflow while reading BCF string");
+    throw std::invalid_argument("buffer overflow while reading BCF string");
   }
   std::string val(buf + idx, size);
   idx += size;

@@ -39,7 +39,7 @@ cdef extern from 'info.h' namespace 'bcf':
         # declare class constructor and methods
         Info() except +
         vector[string] get_keys() except +
-        InfoType get_type(string &) except +
+        bool get_type(const string &, InfoType &) except +
         int32_t get_int(uint32_t offset) except +
         float get_float(uint32_t offset) except +
         string get_string(uint32_t offset) except +
@@ -59,7 +59,7 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         # declare class constructor and methods
         SampleData() except +
         vector[string] get_keys() except +
-        FormatType get_type(string &) except +
+        bool get_type(const string &, FormatType &) except +
         vector[int32_t] get_ints(FormatType &) except +
         vector[float] get_floats(FormatType &) except +
         vector[string] get_strings(FormatType &) except +
@@ -146,12 +146,8 @@ cdef class BcfInfo:
 
     def __contains__(self, key):
         ''' check if key in Info '''
-        cdef string k = key.encode('utf8')
-        try:
-            self.thisptr.get_type(k)
-            return True
-        except ValueError:
-            return False
+        cdef InfoType info_type
+        return self.thisptr.get_type(key.encode('utf8'), info_type)
 
     def keys(self):
         return (x.decode('utf8') for x in self.thisptr.get_keys())
@@ -166,11 +162,10 @@ cdef class BcfInfo:
             yield x
 
     def __getitem__(self, _key):
-        if not self.__contains__(_key):
-            raise KeyError(f'unknown INFO field: {_key}')
-
         cdef string key = _key.encode('utf8')
-        cdef InfoType info_type = self.thisptr.get_type(key)
+        cdef InfoType info_type
+        if not self.thisptr.get_type(key, info_type):
+            raise KeyError(f'unknown INFO field: {_key}')
 
         cdef int8_t datatype = info_type.type
         cdef uint32_t offset = info_type.offset
@@ -202,12 +197,8 @@ cdef class BcfSampleData:
 
     def __contains__(self, key):
         ''' check if key in SampleData '''
-        cdef string k = key.encode('utf8')
-        try:
-            self.thisptr.get_type(k)
-            return True
-        except ValueError:
-            return False
+        cdef FormatType fmt_type
+        return self.thisptr.get_type(key.encode('utf8'), fmt_type)
 
     def keys(self):
         return (x.decode('utf8') for x in self.thisptr.get_keys())
@@ -222,12 +213,10 @@ cdef class BcfSampleData:
             yield x
 
     def __getitem__(self, _key):
-        if not self.__contains__(_key):
-            raise KeyError(f'unknown FORMAT field: {_key}')
-
         cdef string key = _key.encode('utf8')
-
-        cdef FormatType fmt_type = self.thisptr.get_type(key)
+        cdef FormatType fmt_type
+        if not self.thisptr.get_type(key, fmt_type):
+            raise KeyError(f'unknown FORMAT field: {_key}')
         cdef uint32_t n_per_sample = fmt_type.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples

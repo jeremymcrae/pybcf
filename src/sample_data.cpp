@@ -45,7 +45,7 @@ SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t 
                                 static_cast<std::uint64_t>(type_val.type_size) *
                                 static_cast<std::uint64_t>(n_samples);
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf.size()) {
-      throw std::out_of_range("FORMAT field exceeds BCF sample buffer");
+      throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
     keys[key] = {static_cast<std::uint8_t>(type_val.type), type_val.type_size, buf_idx,
                  type_val.n_vals, is_geno};
@@ -63,14 +63,17 @@ std::vector<std::string> SampleData::get_keys() {
   return key_names;
 }
 
-/// @brief figure out the data type for a given format key
+/// @brief look up the data type for a given format key
 /// @param key string for the format key to check
-/// @return struct containing details of the type, number of values, and buffer offset
-FormatType SampleData::get_type(std::string &key) {
-  if (keys.count(key) == 0) {
-    throw std::invalid_argument("no entries for " + key + " in data");
+/// @param out struct populated with type, number of values, and buffer offset when found
+/// @return true if key is present in this variant's sample data
+bool SampleData::get_type(const std::string & key, FormatType & out) const {
+  auto it = keys.find(key);
+  if (it == keys.end()) {
+    return false;
   }
-  return keys[key];
+  out = it->second;
+  return true;
 }
 
 /// @brief get vector of ints for a given format key
@@ -216,7 +219,7 @@ std::vector<std::int32_t> SampleData::parse_8bit_ints(FormatType & type) {
     return vals;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n > buf.size()) {
-    throw std::out_of_range("FORMAT int8 data exceeds buffer");
+    throw std::invalid_argument("FORMAT int8 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
@@ -257,7 +260,7 @@ std::vector<std::int32_t> SampleData::parse_16bit_ints(FormatType & type) {
     return vals;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * 2 > buf.size()) {
-    throw std::out_of_range("FORMAT int16 data exceeds buffer");
+    throw std::invalid_argument("FORMAT int16 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
@@ -293,7 +296,7 @@ std::vector<std::int32_t> SampleData::parse_32bit_ints(FormatType & type) {
     return vals;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * 4 > buf.size()) {
-    throw std::out_of_range("FORMAT int32 data exceeds buffer");
+    throw std::invalid_argument("FORMAT int32 data exceeds buffer");
   }
   std::uint32_t offset = type.offset;
   std::uint64_t n = 0;
@@ -335,7 +338,7 @@ std::vector<std::int32_t> SampleData::get_geno(FormatType & type) {
     return vals;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf.size()) {
-    throw std::out_of_range("FORMAT GT data exceeds buffer");
+    throw std::invalid_argument("FORMAT GT data exceeds buffer");
   }
 
   std::uint32_t offset = type.offset;
@@ -404,7 +407,7 @@ std::vector<float> SampleData::get_floats(FormatType & type) {
     return vals;
   }
   if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf.size()) {
-    throw std::out_of_range("FORMAT float data exceeds buffer");
+    throw std::invalid_argument("FORMAT float data exceeds buffer");
   }
   const char * src = buf.data() + type.offset;
   std::memcpy(vals.data(), src, max_n * sizeof(float));

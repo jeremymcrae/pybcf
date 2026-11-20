@@ -76,6 +76,8 @@ void ensure_slot(std::vector<T> & vec, std::uint32_t idx) {
 } // namespace
 
 Header::Header(const std::string & text) {
+  // Without explicit IDX=... tags, BCF assigns IDs sequentially starting at 0
+  // for contigs and at 1 for INFO/FILTER/FORMAT (index 0 is reserved for PASS).
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
   bool seen_idx = false;
@@ -83,6 +85,7 @@ Header::Header(const std::string & text) {
   bool seen_chrom = false;
   bool seen_pass = false;
 
+  // Scan the header text line by line without copying intermediate line strings.
   size_t pos = 0;
   while (pos < text.size()) {
     size_t nl = text.find('\n', pos);
@@ -99,6 +102,7 @@ Header::Header(const std::string & text) {
       continue;
     }
     if (text[line_start + 1] != '#') {
+      // Single-'#' #CHROM column header: extract tab-separated sample names after FORMAT.
       if ((line_len == 6 && text.compare(line_start, 6, "#CHROM") == 0) ||
           (line_len > 6 && text.compare(line_start, 7, "#CHROM\t") == 0)) {
         if (seen_chrom) {
@@ -125,6 +129,7 @@ Header::Header(const std::string & text) {
       continue;
     }
 
+    // Double-'#' metadata line (e.g. ##INFO=<ID=...,Number=...,Type=...>).
     size_t body_start = line_start + 2;
     size_t eq = text.find('=', body_start);
     if (eq == std::string::npos || eq >= clean_end) {

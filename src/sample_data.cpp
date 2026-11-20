@@ -121,6 +121,8 @@ static inline bool cpu_has_avx2() {
   return supported;
 }
 
+// Convert 4 signed 32-bit integers to float64, replacing BCF missing/end-of-vector
+// sentinels (values <= miss_thresh, e.g. -128/-127 for int8) with NaN.
 __attribute__((target("avx2")))
 static inline void store_epi32_as_double(__m128i vals, double * dst, __m256d miss_thresh, __m256d qnan) {
   __m256d d = _mm256_cvtepi32_pd(vals);
@@ -185,6 +187,9 @@ static std::uint64_t parse_32bit_ints_avx2(const char * src, double * dst, std::
   return n;
 }
 
+// BCF encodes each GT allele as ((allele + 1) << 1) | phased, with 0 for missing ('.')
+// and negative values (0x80/0x81) for missing/end-of-vector padding. Shift right by 1,
+// subtract 1, and force negative bytes to -1 so both missing encodings map to NaN.
 __attribute__((target("avx2")))
 static std::uint64_t parse_geno_avx2(const char * src, double * dst, std::uint64_t max_n) {
   const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
@@ -215,6 +220,8 @@ static std::uint64_t parse_geno_avx2(const char * src, double * dst, std::uint64
   return n;
 }
 
+// For diploid 8-bit GT (2 bytes per sample), phasing is stored in the low bit of
+// the second allele byte (odd byte offsets 1, 3, 5, ...).
 __attribute__((target("avx2")))
 static std::uint32_t parse_phase_avx2(const char * src, std::uint8_t * dst, std::uint32_t n_samples) {
   const __m128i one = _mm_set1_epi8(1);

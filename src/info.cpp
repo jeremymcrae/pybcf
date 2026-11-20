@@ -54,10 +54,12 @@ void Info::parse() {
       throw std::invalid_argument("invalid BCF INFO flag length");
     }
 
+    // Record each INFO field's byte offset and shape now; decode actual values only when accessed.
     InfoKind kind;
     if (field->is_flag) {
       kind = info_flag;
     } else if (type_val.n_vals == 0) {
+      // Zero-length non-flag values represent empty tuples for list fields or None for scalars.
       kind = field->is_list ? info_vector_int : info_missing;
     } else if (type_val.type == char_) {
       kind = field->is_list ? info_vector_string : info_string;
@@ -67,6 +69,7 @@ void Info::parse() {
       kind = ((type_val.n_vals > 1) || field->is_list) ? info_vector_int : info_scalar_int;
     }
 
+    // If a duplicate INFO tag appears in the same record, keep the last occurrence.
     InfoType info_type = {kind, type_val.type_size, buf_idx, type_val.n_vals};
     bool updated = false;
     for (auto & entry : fields) {

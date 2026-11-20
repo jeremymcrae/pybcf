@@ -10,6 +10,8 @@ namespace bcf {
 
 namespace {
 
+// Fixed 32-byte binary header at the start of every BCF2 variant record.
+// `l_shared` counts the bytes from `chrom_id` to the end of INFO (24 fixed bytes + variable data).
 struct RecordHeader {
   std::uint32_t l_shared;
   std::uint32_t l_indiv;
@@ -53,6 +55,7 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
       throw std::invalid_argument("invalid BCF variant coordinates");
     }
 
+    // Unpack allele/INFO counts (16 bits each) and FORMAT/sample counts (8 + 24 bits).
     std::uint32_t n_alleles = hdr.n_allele_info >> 16;
     std::uint32_t n_info = hdr.n_allele_info & 0xffff;
     if (n_alleles == 0) {
@@ -69,6 +72,8 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
     std::uint32_t shared_len = hdr.l_shared - FIXED_SHARED_BYTES;
     std::int32_t rec_pos = hdr.pos0 + 1;
 
+    // During region queries, stop once past the target contig or end position, and
+    // skip upstream records in the same BGZF block that end before `query_start`.
     if (query_contig_id >= 0 && hdr.chrom_id != query_contig_id) {
       return false;
     }
@@ -81,6 +86,7 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
       continue;
     }
 
+    // Read the variable-length shared block (ID, REF, ALT, FILTER, and raw INFO bytes).
     std::unique_ptr<char[]> shared_buf;
     if (shared_len > 0) {
       shared_buf.reset(new char[shared_len]);
@@ -120,6 +126,7 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
       filter_ids[i] = static_cast<std::uint32_t>(filter_idx);
     }
 
+    // Hand ownership of `shared_buf` to Info so INFO values can be decoded lazily from `idx`.
     info = Info(std::move(shared_buf), shared_len, idx, &header, n_info);
     sample_data = SampleData(infile, header, hdr.l_indiv, n_fmt, n_sample);
     return true;

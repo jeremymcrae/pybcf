@@ -112,6 +112,8 @@ cdef extern from 'variant.h' namespace 'bcf':
         Info info
         SampleData sample_data
 
+# Lookup tables on BcfReader map integer header IDX values directly to decoded
+# Python strings, avoiding repeated C++ string copies and UTF-8 decoding per variant.
 cdef inline tuple _decode_ids(vector[string] vec):
     return tuple([None if x.empty() else x.decode('utf8') for x in vec])
 
@@ -410,6 +412,9 @@ cdef class BcfVariant:
         cdef tuple ids = self._reader._get_filter_ids()
         return [ids[i] for i in self.thisptr.filter_ids]
 
+    # Create lightweight BcfInfo / BcfSampleData wrappers on demand rather than caching
+    # them on BcfVariant; caching creates a reference cycle that delays freeing large
+    # per-variant sample buffers until Python's cyclic garbage collector runs.
     @property
     def info(self):
         ''' variant info data

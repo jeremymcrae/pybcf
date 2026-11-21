@@ -188,6 +188,29 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual(list(vcf_pysam.header.formats), vcf_pybcf.header.formats)
         self.assertEqual(list(vcf_pysam.header.samples), vcf_pybcf.header.samples)
 
+    def test_uncompressed_bcf(self):
+        ''' check a BCF without compression reads the same as the compressed original
+        '''
+        path = Path(__file__).parent / 'data' / 'bcfv2.2.bcf'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_path = Path(tmpdir) / 'raw.bcf'
+            raw_path.write_bytes(gzip.open(path).read())
+            self.assertEqual(raw_path.read_bytes()[:5], b'BCF\x02\x02')
+
+            variants = list(BcfReader(path))
+            raw_variants = list(BcfReader(raw_path))
+            self.assertEqual(len(variants), len(raw_variants))
+            for var, raw_var in zip(variants, raw_variants):
+                self.assertEqual((var.chrom, var.pos, var.ref, var.alts),
+                                 (raw_var.chrom, raw_var.pos, raw_var.ref, raw_var.alts))
+                self.assertEqual(repr(var.info.items()), repr(raw_var.info.items()))
+                self.assertEqual(list(var.samples), list(raw_var.samples))
+                for key in var.samples:
+                    if isinstance(var.samples[key], list):
+                        self.assertEqual(var.samples[key], raw_var.samples[key])
+                    else:
+                        np.testing.assert_array_equal(var.samples[key], raw_var.samples[key])
+
     def test_header_quoted_commas_and_blank_lines(self):
         ''' check header parsing handles blank lines, quoted commas/equals/backslashes, and IDX errors
         '''

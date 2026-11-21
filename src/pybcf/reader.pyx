@@ -528,15 +528,21 @@ cdef class BcfReader:
         return self.header.samples
 
     def fetch(self, chrom, start=None, stop=None):
-        ''' fetches all variants within a genomic region
+        ''' move to a genomic region, to iterate through the variants overlapping it
+
+        Positions are 1-based and include both ends, as in a VCF. This differs from
+        pysam, where fetch() takes 0-based, half-open positions. Needs a .csi index.
 
         Args:
             chrom: chromosome that variants must be on
-            start: start nucleotide of region. If None, starts with first variant on chrom
-            stop: end nucleotide of region. If None, continues to last variant on chrom
+            start: first position of region. If None, starts with first variant on chrom
+            stop: last position of region. If None, continues to last variant on chrom
 
-        Yields:
-            BcfVars for variants within the genome region
+        Returns:
+            this BcfReader, which then iterates through the variants in the region.
+            A reader has only one position in the file, so calling fetch() inside a
+            loop over the same reader ends that loop early. Open a second BcfReader
+            to fetch while looping.
         '''
         if not self.is_open:
             raise ValueError('bcf is closed')

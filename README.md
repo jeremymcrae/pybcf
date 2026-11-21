@@ -27,11 +27,14 @@ for var in bcf:
     keys = list(var.samples)
     genotypes = var.samples['GT']  # as n x 2 numpy array, missing=nan
 
-# or fetch from random regions if bcf is indexed
+# or fetch from random regions if bcf is indexed. Positions are 1-based and
+# include both ends (pysam's fetch is 0-based and excludes the end)
 for var in bcf.fetch('chr1', 10000, 200000):
     print(var.chrom, var.pos)
 ```
 
 ### Limitations
- - doesn't work with uncompressed BCFs
+ - `fetch()` needs a bgzip-compressed BCF with a `.csi` index
+ - a reader has one position in the file, so `fetch()` inside a loop over the
+   same reader ends that loop. Open a second `BcfReader` to do both at once
  - extracting info fields is a little slow

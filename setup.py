@@ -61,6 +61,7 @@ extensions = [
     Extension('pybcf.reader',
         extra_compile_args=EXTRA_COMPILE_ARGS,
         sources=['src/pybcf/reader.pyx',
+            'src/bgzf.cpp',
             'src/gzreader.cpp',
             'src/bcf.cpp',
             'src/index.cpp',

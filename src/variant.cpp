@@ -115,13 +115,13 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
     }
 
     // 6. Decode the FILTER vector of header dictionary indices (skipping any MISSING entries).
-    Typed type_val(buf, shared_len, idx);
-    if (type_val.n_vals > 0 && !is_int_type(type_val.type)) {
+    TypeDescriptor desc(buf, shared_len, idx);
+    if (desc.n_vals > 0 && !is_int_type(desc.type)) {
       throw std::invalid_argument("expected integer BCF filter indices");
     }
     filter_ids.clear();
-    for (std::uint32_t i = 0; i < type_val.n_vals; i++) {
-      std::int32_t filter_idx = parse_int(buf, shared_len, idx, type_val.type_size);
+    for (std::uint32_t i = 0; i < desc.n_vals; i++) {
+      std::int32_t filter_idx = parse_int(buf, shared_len, idx, desc.type_size);
       if (filter_idx == INT32_MIN) {
         continue;
       }

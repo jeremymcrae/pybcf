@@ -1,5 +1,5 @@
-#ifndef BCF_FORMAT_H
-#define BCF_FORMAT_H
+#ifndef BCF_SAMPLE_DATA_H
+#define BCF_SAMPLE_DATA_H
 
 #include <cstddef>
 #include <cstdint>
@@ -19,7 +19,7 @@ struct FormatLayout {
   std::uint8_t type_size;  // byte width of a single element (1, 2, or 4)
   std::uint32_t offset;    // start byte offset of sample 0's values in `buf`
   std::uint32_t n_vals;    // number of values stored per sample (max ploidy/vector length)
-  bool is_geno;            // true when this field is GT (uses allele/phase bit-packing)
+  bool is_gt;              // true when this field is GT (uses allele/phase bit-packing)
 };
 
 // Associates a FORMAT tag's header dictionary index and metadata with its buffer slice.

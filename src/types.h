@@ -104,21 +104,38 @@ inline std::string parse_string(const char * buf, std::size_t buf_len, std::uint
   return std::string(start, len);
 }
 
-// Decodes a BCF2 type-descriptor prefix:
-// - Bits 0..3 hold the atomic `Types` code.
+/// @brief read one byte of a BCF type descriptor
+inline std::uint8_t parse_byte(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
+  if (idx >= buf_len) {
+    throw std::invalid_argument("buffer overflow while reading BCF type descriptor");
+  }
+  return static_cast<std::uint8_t>(buf[idx++]);
+}
+
+// The type descriptor in front of every value in a BCF record, which says what type the
+// value's elements are, and how many of them follow:
+// - Bits 0..3 of its first byte hold the atomic `Types` code.
 // - Bits 4..7 hold the element count (`0..14`), unless equal to `15`, which signals
 //   an overflow length stored immediately afterwards as a typed BCF integer.
-class Typed {
-public:
+struct TypeDescriptor {
   Types type = flag;
   std::uint32_t n_vals = 0;
   std::uint8_t type_size = 0;
 
-  Typed(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
-    set_type(get_byte(buf, buf_len, idx));
+  TypeDescriptor(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
+    std::uint8_t byte = parse_byte(buf, buf_len, idx);
+    std::uint8_t raw_type = byte & 0x0F;
+    if (raw_type != flag && raw_type != int8 && raw_type != int16 &&
+        raw_type != int32 && raw_type != float_ && raw_type != char_) {
+      throw std::invalid_argument("invalid BCF value type: " + std::to_string(raw_type));
+    }
+    type = static_cast<Types>(raw_type);
+    type_size = type_sizes[raw_type];
+    n_vals = byte >> 4;
+
     if (n_vals == 15) {
       // Read the follow-up integer type byte and decode the true vector length.
-      std::uint8_t len_byte = get_byte(buf, buf_len, idx);
+      std::uint8_t len_byte = parse_byte(buf, buf_len, idx);
       std::uint8_t len_type = len_byte & 0x0F;
       if ((len_byte >> 4) != 1 || (len_type != int8 && len_type != int16 && len_type != int32)) {
         throw std::invalid_argument("cannot identify number of bytes to read");
@@ -130,45 +147,24 @@ public:
       n_vals = static_cast<std::uint32_t>(count);
     }
   }
-
-  std::uint8_t get_byte(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
-    if (idx >= buf_len) {
-      throw std::invalid_argument("buffer overflow while reading BCF type descriptor");
-    }
-    std::uint8_t byte = 0;
-    std::memcpy(&byte, buf + idx, 1);
-    idx += 1;
-    return byte;
-  }
-
-  void set_type(std::uint8_t byte) {
-    std::uint8_t raw_type = byte & 0x0F;
-    if (raw_type != flag && raw_type != int8 && raw_type != int16 &&
-        raw_type != int32 && raw_type != float_ && raw_type != char_) {
-      throw std::invalid_argument("invalid BCF value type: " + std::to_string(raw_type));
-    }
-    type = static_cast<Types>(raw_type);
-    type_size = type_sizes[raw_type];
-    n_vals = byte >> 4;
-  }
 };
 
 /// @brief read a type-tagged scalar BCF integer (used for INFO/FORMAT header dictionary IDs)
 inline std::int32_t parse_typed_int(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
-  Typed type_val(buf, buf_len, idx);
-  if (!is_int_type(type_val.type) || type_val.n_vals != 1) {
+  TypeDescriptor desc(buf, buf_len, idx);
+  if (!is_int_type(desc.type) || desc.n_vals != 1) {
     throw std::invalid_argument("expected scalar BCF integer");
   }
-  return parse_int(buf, buf_len, idx, type_val.type_size);
+  return parse_int(buf, buf_len, idx, desc.type_size);
 }
 
 /// @brief read a type-tagged BCF string (missing `.` may be encoded as 0-len `char_` `0x07` or `0x00`)
 inline std::string parse_typed_string(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
-  Typed type_val(buf, buf_len, idx);
-  if (type_val.type != char_ && !(type_val.type == flag && type_val.n_vals == 0)) {
+  TypeDescriptor desc(buf, buf_len, idx);
+  if (desc.type != char_ && !(desc.type == flag && desc.n_vals == 0)) {
     throw std::invalid_argument("expected BCF string value");
   }
-  return parse_string(buf, buf_len, idx, type_val.n_vals);
+  return parse_string(buf, buf_len, idx, desc.n_vals);
 }
 
 } // namespace bcf

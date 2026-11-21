@@ -83,7 +83,7 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         uint8_t type_size
         uint32_t offset
         uint32_t n_vals
-        bool is_geno
+        bool is_gt
 
     cdef struct NamedFormat:
         uint32_t id_idx
@@ -149,7 +149,7 @@ cdef class BcfInfo:
     cdef BcfVariant _variant
 
     def __cinit__(self, BcfVariant variant not None):
-        self.thisptr = &variant.thisptr.info
+        self.thisptr = &variant.record.info
         self._variant = variant
 
     def __init__(self, *args, **kwargs):
@@ -218,10 +218,10 @@ cdef class BcfInfo:
             return default
         return self._decode_value(layout)
 
-    def __getitem__(self, _key):
+    def __getitem__(self, key):
         cdef InfoLayout layout
-        if not self._find(_key, layout):
-            raise KeyError(f'unknown INFO field: {_key}')
+        if not self._find(key, layout):
+            raise KeyError(f'unknown INFO field: {key}')
         return self._decode_value(layout)
 
 # Mapping-like view over `Variant.sample_data`; decodes requested FORMAT fields
@@ -231,7 +231,7 @@ cdef class BcfSampleData:
     cdef BcfVariant _variant
 
     def __cinit__(self, BcfVariant variant not None):
-        self.thisptr = &variant.thisptr.sample_data
+        self.thisptr = &variant.record.sample_data
         self._variant = variant
 
     def __init__(self, *args, **kwargs):
@@ -306,10 +306,10 @@ cdef class BcfSampleData:
             return default
         return self._decode_value(layout)
 
-    def __getitem__(self, _key):
+    def __getitem__(self, key):
         cdef FormatLayout layout
-        if not self._find(_key, layout):
-            raise KeyError(f'unknown FORMAT field: {_key}')
+        if not self._find(key, layout):
+            raise KeyError(f'unknown FORMAT field: {key}')
         return self._decode_value(layout)
 
     # Decode GT phasing lazily into a `uint8` array of `0`/`1` bytes and reinterpret
@@ -327,10 +327,10 @@ cdef class BcfSampleData:
         self.thisptr.read_phase(layout, &p_arr[0])
         return raw_arr.view(np.bool_)
 
-# Owns a C++ `Variant` value inline (`thisptr`) and resolves integer dictionary IDs
+# Owns a C++ `Variant` value inline (`record`) and resolves integer dictionary IDs
 # (`chrom_id`, `filter_ids`) via cached Python string tuples on `_reader`.
 cdef class BcfVariant:
-    cdef Variant thisptr
+    cdef Variant record
     cdef BcfReader _reader
     def __cinit__(self, BcfReader bcf not None):
         self._reader = bcf
@@ -346,7 +346,7 @@ cdef class BcfVariant:
         # with `BcfVariant.__new__` has contig 0, which a header without contigs lacks,
         # so this lookup is the one place that checks bounds.
         with cython.boundscheck(True):
-            return self._reader._get_contig_ids()[self.thisptr.chrom_id]
+            return self._reader._get_contig_ids()[self.record.chrom_id]
 
     @property
     def contig(self):
@@ -358,42 +358,42 @@ cdef class BcfVariant:
     def pos(self):
         ''' variant nucleotide position
         '''
-        return self.thisptr.pos
+        return self.record.pos
 
     @property
     def ref(self):
         ''' reference allele
         '''
-        return self.thisptr.ref.decode('utf8')
+        return self.record.ref.decode('utf8')
 
     @property
     def alts(self):
         ''' list of alternate alleles
         '''
-        if self.thisptr.alts.size() == 0:
+        if self.record.alts.size() == 0:
             return None
-        return tuple([x.decode('utf8') for x in self.thisptr.alts])
+        return tuple([x.decode('utf8') for x in self.record.alts])
 
     @property
     def id(self):
         ''' variant ID
         '''
-        if self.thisptr.varid.size() == 0:
+        if self.record.varid.size() == 0:
             return None
-        return self.thisptr.varid.decode('utf8')
+        return self.record.varid.decode('utf8')
 
     @property
     def qual(self):
         ''' variant quality score (or None)
         '''
-        return _decode_float(self.thisptr.qual_bits)
+        return _decode_float(self.record.qual_bits)
 
     @property
     def filter(self):
         ''' list of filter information
         '''
         cdef tuple ids = self._reader._get_filter_ids()
-        return [ids[i] for i in self.thisptr.filter_ids]
+        return [ids[i] for i in self.record.filter_ids]
 
     # Create lightweight BcfInfo / BcfSampleData wrappers on demand rather than caching
     # them on BcfVariant; caching creates a reference cycle that delays freeing large
@@ -478,7 +478,7 @@ cdef class BcfReader:
             raise ValueError('bcf is closed')
         # Allocate `BcfVariant` via `__new__` (bypassing `__init__`, which forbids direct user construction).
         cdef BcfVariant var = BcfVariant.__new__(BcfVariant, self)
-        if not self.thisptr.nextvar(var.thisptr):
+        if not self.thisptr.nextvar(var.record):
             raise StopIteration
         return var
 

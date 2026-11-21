@@ -43,13 +43,13 @@ void Info::parse() {
     const InfoField * field = &header->info[uid];
 
     // Read the value's type/length descriptor and ensure its payload fits within `buf`.
-    Typed type_val(raw, buf_len, buf_idx);
-    std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) * type_val.type_size;
+    TypeDescriptor desc(raw, buf_len, buf_idx);
+    std::uint64_t field_bytes = static_cast<std::uint64_t>(desc.n_vals) * desc.type_size;
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
       throw std::invalid_argument("INFO field exceeds BCF shared buffer");
     }
 
-    if (type_val.type == flag && type_val.n_vals != 0) {
+    if (desc.type == flag && desc.n_vals != 0) {
       throw std::invalid_argument("invalid BCF INFO flag length");
     }
 
@@ -58,19 +58,19 @@ void Info::parse() {
     InfoKind kind;
     if (field->is_flag) {
       kind = info_flag;
-    } else if (type_val.n_vals == 0) {
+    } else if (desc.n_vals == 0) {
       // Zero-length non-flag values represent empty tuples `()` for list fields or `None` for scalars.
       kind = field->is_list ? info_vector_int : info_missing;
-    } else if (type_val.type == char_) {
+    } else if (desc.type == char_) {
       // BCF encodes string lists as a single comma-separated `char_` string.
       kind = field->is_list ? info_vector_string : info_string;
-    } else if (type_val.type == float_) {
-      kind = ((type_val.n_vals > 1) || field->is_list) ? info_vector_float : info_scalar_float;
+    } else if (desc.type == float_) {
+      kind = ((desc.n_vals > 1) || field->is_list) ? info_vector_float : info_scalar_float;
     } else {
-      kind = ((type_val.n_vals > 1) || field->is_list) ? info_vector_int : info_scalar_int;
+      kind = ((desc.n_vals > 1) || field->is_list) ? info_vector_int : info_scalar_int;
     }
 
-    fields.push_back({uid, field, {kind, type_val.type_size, buf_idx, type_val.n_vals}});
+    fields.push_back({uid, field, {kind, desc.type_size, buf_idx, desc.n_vals}});
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
 

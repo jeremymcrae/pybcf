@@ -5,11 +5,15 @@
 #include "sample_data.h"
 #include "types.h"
 
+// Choose the SIMD instruction set once here. The kernels further down are written for
+// each one, and `BCF_HAVE_SIMD` tells the decoders that kernels exist.
 #if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   #include <immintrin.h>
+  #define BCF_SIMD_AVX2 1
   #define BCF_HAVE_SIMD 1
 #elif defined(__aarch64__)
   #include <arm_neon.h>
+  #define BCF_SIMD_NEON 1
   #define BCF_HAVE_SIMD 1
 #endif
 
@@ -50,26 +54,26 @@ void SampleData::parse() {
     }
     std::uint32_t uid = static_cast<std::uint32_t>(format_idx);
     const FormatField * fmt_field = &header->format[uid];
-    bool is_geno = fmt_field->is_gt;
+    bool is_gt = fmt_field->is_gt;
 
     // Read the per-sample element type and per-sample vector length (`n_vals`).
-    Typed type_val(raw, buf_len, buf_idx);
-    if (type_val.type == flag && type_val.n_vals != 0) {
+    TypeDescriptor desc(raw, buf_len, buf_idx);
+    if (desc.type == flag && desc.n_vals != 0) {
       throw std::invalid_argument("invalid BCF FORMAT flag length");
     }
-    if (is_geno && !is_int_type(type_val.type)) {
+    if (is_gt && !is_int_type(desc.type)) {
       throw std::invalid_argument("GT field must be encoded as integer");
     }
 
     // Verify the contiguous value block for all samples fits inside `buf`, then
     // record the byte offset and skip ahead to the next FORMAT field.
-    std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) *
-                                static_cast<std::uint64_t>(type_val.type_size) *
+    std::uint64_t field_bytes = static_cast<std::uint64_t>(desc.n_vals) *
+                                static_cast<std::uint64_t>(desc.type_size) *
                                 static_cast<std::uint64_t>(n_samples);
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
-    FormatLayout layout = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
+    FormatLayout layout = {desc.type, desc.type_size, buf_idx, desc.n_vals, is_gt};
     fields.push_back({uid, fmt_field, layout});
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
@@ -104,7 +108,7 @@ bool SampleData::find(const char * key, std::size_t key_len, FormatLayout & out)
 // returns how many it handled; the caller finishes the rest with a scalar loop.
 // x86_64 and ARM64 define the same kernel names, so the callers below have no
 // per-architecture code.
-#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
+#if defined(BCF_SIMD_AVX2)
 // Cache the runtime CPU check once so x86_64 builds remain portable to pre-AVX2 CPUs
 // while automatically using 256-bit SIMD on modern x86_64 machines.
 static inline bool simd_supported() {
@@ -196,8 +200,8 @@ static std::uint64_t simd_int32(const char * src, double * dst, std::uint64_t ma
 // - `_mm256_cmpgt_epi8(zero, initial)` produces `0xff` (`-1`) for any negative sentinel byte,
 //   forcing it to `-1` as well so every missing/padding lane becomes NaN.
 __attribute__((target("avx2")))
-static std::uint64_t simd_geno(const char * src, double * dst, std::uint64_t max_n) {
-  const __m256i mask_geno = _mm256_set1_epi8(static_cast<char>(0xfe));
+static std::uint64_t simd_gt(const char * src, double * dst, std::uint64_t max_n) {
+  const __m256i mask_gt = _mm256_set1_epi8(static_cast<char>(0xfe));
   const __m256i sub = _mm256_set1_epi8(1);
   const __m256i zero = _mm256_setzero_si256();
   const __m256d miss_thresh = _mm256_set1_pd(-1.0);
@@ -205,10 +209,10 @@ static std::uint64_t simd_geno(const char * src, double * dst, std::uint64_t max
   std::uint64_t n = 0;
   for (; n + 32 <= max_n; n += 32) {
     __m256i initial = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n));
-    __m256i geno = _mm256_and_si256(initial, mask_geno);
-    geno = _mm256_sub_epi8(_mm256_srli_epi32(geno, 1), sub);
-    geno = _mm256_or_si256(geno, _mm256_cmpgt_epi8(zero, initial));
-    store_epi8_as_double(geno, dst + n, miss_thresh, qnan);
+    __m256i gt = _mm256_and_si256(initial, mask_gt);
+    gt = _mm256_sub_epi8(_mm256_srli_epi32(gt, 1), sub);
+    gt = _mm256_or_si256(gt, _mm256_cmpgt_epi8(zero, initial));
+    store_epi8_as_double(gt, dst + n, miss_thresh, qnan);
   }
   return n;
 }
@@ -255,7 +259,7 @@ static std::uint64_t simd_floats(const char * src, float * dst, std::uint64_t ma
   }
   return n;
 }
-#elif defined(__aarch64__)
+#elif defined(BCF_SIMD_NEON)
 // NEON is part of the ARM64 baseline, so no runtime check is needed.
 static inline bool simd_supported() {
   return true;
@@ -318,7 +322,7 @@ static std::uint64_t simd_int32(const char * src, double * dst, std::uint64_t ma
 
 // NEON has a true unsigned per-byte shift (`vshrq_n_u8`), so `(initial >> 1) - 1`
 // directly yields allele indices while `initial >= 0x80` masks negative sentinels to -1.
-static std::uint64_t simd_geno(const char * src, double * dst, std::uint64_t max_n) {
+static std::uint64_t simd_gt(const char * src, double * dst, std::uint64_t max_n) {
   const uint8x16_t sub = vdupq_n_u8(1);
   const uint8x16_t miss_u8 = vdupq_n_u8(0x80);
   const float64x2_t miss_thresh = vdupq_n_f64(-1.0);
@@ -326,9 +330,9 @@ static std::uint64_t simd_geno(const char * src, double * dst, std::uint64_t max
   std::uint64_t n = 0;
   for (; n + 16 <= max_n; n += 16) {
     uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(src + n));
-    int8x16_t geno = vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(initial, 1), sub));
-    geno = vorrq_s8(geno, vreinterpretq_s8_u8(vcgeq_u8(initial, miss_u8)));
-    store_s8_as_double(geno, dst + n, miss_thresh, qnan);
+    int8x16_t gt = vreinterpretq_s8_u8(vsubq_u8(vshrq_n_u8(initial, 1), sub));
+    gt = vorrq_s8(gt, vreinterpretq_s8_u8(vcgeq_u8(initial, miss_u8)));
+    store_s8_as_double(gt, dst + n, miss_thresh, qnan);
   }
   return n;
 }
@@ -376,9 +380,9 @@ void SampleData::read_ints(const FormatLayout & layout, double * dst) const {
 #ifdef BCF_HAVE_SIMD
   if (simd_supported()) {
     const char * src = buf.get() + layout.offset;
-    if (layout.is_geno) {
+    if (layout.is_gt) {
       // Only 8-bit GT (fewer than 63 ALT alleles) has a SIMD kernel.
-      n = (layout.type_size == 1) ? simd_geno(src, dst, max_n) : 0;
+      n = (layout.type_size == 1) ? simd_gt(src, dst, max_n) : 0;
     } else if (layout.type_size == 1) {
       n = simd_int8(src, dst, max_n);
     } else if (layout.type_size == 2) {
@@ -393,7 +397,7 @@ void SampleData::read_ints(const FormatLayout & layout, double * dst) const {
   const double qnan = std::nan("");
   for (; n < max_n; n++) {
     std::int32_t v = parse_int(buf.get(), buf_len, offset, layout.type_size);
-    if (layout.is_geno) {
+    if (layout.is_gt) {
       v = (v < 0) ? -1 : (v >> 1) - 1;
       dst[n] = (v < 0) ? qnan : static_cast<double>(v);
     } else {

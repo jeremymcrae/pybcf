@@ -23,120 +23,134 @@ struct RecordHeader {
   std::uint32_t qual_bits;
   std::uint32_t n_allele_info; // upper 16 bits = n_allele, lower 16 bits = n_info
   std::uint32_t n_fmt_sample;  // upper 8 bits = n_fmt, lower 24 bits = n_sample
+
+  std::uint32_t n_allele() const { return n_allele_info >> 16; }
+  std::uint32_t n_info() const { return n_allele_info & 0xffff; }
+  std::uint32_t n_fmt() const { return n_fmt_sample >> 24; }
+  std::uint32_t n_sample() const { return n_fmt_sample & 0xffffff; }
 };
 static_assert(sizeof(RecordHeader) == 32, "BCF2 fixed record header must be 32 bytes");
 
 const std::uint32_t FIXED_SHARED_BYTES = 24;
 
-} // namespace
+// Read the fixed-size header of the next record, and check it against the file's header.
+// Returns false at the end of the file.
+bool read_record_header(GzReader & infile, const Header & header, RecordHeader & hdr) {
+  std::size_t n_read = infile.read(&hdr, sizeof(hdr));
+  if (n_read == 0) {
+    return false;
+  }
+  if (n_read != sizeof(hdr)) {
+    throw std::invalid_argument("truncated BCF variant header");
+  }
+  if (hdr.l_shared < FIXED_SHARED_BYTES) {
+    throw std::invalid_argument("invalid BCF shared record length");
+  }
+  if (hdr.chrom_id < 0 || static_cast<std::size_t>(hdr.chrom_id) >= header.contigs.size() ||
+      header.contigs[hdr.chrom_id].empty()) {
+    throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
+  }
+  if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
+    throw std::invalid_argument("invalid BCF variant coordinates");
+  }
+  if (hdr.n_allele() == 0) {
+    throw std::invalid_argument(header.contigs[hdr.chrom_id] + ":" +
+                                std::to_string(hdr.pos0 + 1) + " lacks a ref allele");
+  }
+  if ((hdr.n_fmt() > 0 || hdr.l_indiv > 0) && hdr.n_sample() != header.samples.size()) {
+    throw std::invalid_argument("BCF record sample count does not match header");
+  }
+  return true;
+}
 
-/// @brief read the next variant record matching an optional 1-based inclusive region filter
-bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_contig_id,
-                   std::int32_t query_start, std::int32_t query_end) {
-  while (true) {
-    // 1. Read and validate the fixed 32-byte record header.
-    RecordHeader hdr{};
-    std::size_t n_read = infile.read(&hdr, sizeof(hdr));
-    if (n_read == 0) {
-      return false;
-    }
-    if (n_read != sizeof(hdr)) {
-      throw std::invalid_argument("truncated BCF variant header");
-    }
-    if (hdr.l_shared < FIXED_SHARED_BYTES) {
-      throw std::invalid_argument("invalid BCF shared record length");
-    }
-    if (hdr.chrom_id < 0 || static_cast<std::size_t>(hdr.chrom_id) >= header.contigs.size() ||
-        header.contigs[hdr.chrom_id].empty()) {
-      throw std::invalid_argument("unknown contig index: " + std::to_string(hdr.chrom_id));
-    }
-    if (hdr.pos0 < -1 || hdr.pos0 == INT32_MAX || hdr.rlen < 0) {
-      throw std::invalid_argument("invalid BCF variant coordinates");
-    }
+// Records are sorted by contig, then position. So once a record is on another contig, or
+// starts after the region, no later record can overlap the region.
+bool is_past(const RecordHeader & hdr, const Region & region) {
+  return (region.contig_id >= 0 && hdr.chrom_id != region.contig_id) || hdr.pos0 + 1 > region.end;
+}
 
-    // 2. Unpack bit-packed allele/INFO counts (16 + 16 bits) and FORMAT/sample counts (8 + 24 bits).
-    std::uint32_t n_alleles = hdr.n_allele_info >> 16;
-    std::uint32_t n_info = hdr.n_allele_info & 0xffff;
-    if (n_alleles == 0) {
-      throw std::invalid_argument(header.contigs[hdr.chrom_id] + ":" +
-                                  std::to_string(hdr.pos0 + 1) + " lacks a ref allele");
-    }
+// A `fetch()` starts reading where the index says the first overlapping record could be,
+// which can be upstream of the region. The records to skip there are the ones whose
+// reference span, `[pos, pos + rlen - 1]`, ends before the region starts.
+bool ends_before(const RecordHeader & hdr, const Region & region) {
+  std::int64_t pos = static_cast<std::int64_t>(hdr.pos0) + 1;
+  return pos + std::max<std::int32_t>(1, hdr.rlen) - 1 < region.start;
+}
 
-    std::uint32_t n_sample = hdr.n_fmt_sample & 0xffffff;
-    std::uint32_t n_fmt = hdr.n_fmt_sample >> 24;
-    if ((n_fmt > 0 || hdr.l_indiv > 0) && n_sample != header.samples.size()) {
-      throw std::invalid_argument("BCF record sample count does not match header");
+// Find the next record that overlaps `region`, leaving `infile` just after the record's
+// fixed-size header. Records before the region are skipped without decoding them.
+// Returns false if no record is left in the region.
+bool find_record(GzReader & infile, const Header & header, const Region & region,
+                 RecordHeader & hdr) {
+  while (read_record_header(infile, header, hdr) && !is_past(hdr, region)) {
+    if (!ends_before(hdr, region)) {
+      return true;
     }
+    infile.skip(static_cast<std::size_t>(hdr.l_shared - FIXED_SHARED_BYTES) + hdr.l_indiv,
+                "truncated BCF variant record");
+  }
+  return false;
+}
 
-    std::uint32_t shared_len = hdr.l_shared - FIXED_SHARED_BYTES;
-    std::int32_t rec_pos = hdr.pos0 + 1;
-
-    // 3. During indexed `fetch()` queries (`query_contig_id >= 0`), check coordinates before
-    // allocating or decoding the record payload:
-    // - Because records are sorted by (contig, pos), moving onto another contig or past
-    //   `query_end` means no later record can overlap the region.
-    // - A CSI seek lands on the first record of the earliest candidate chunk, which can start
-    //   upstream of `query_start`; skip records whose reference span
-    //   `[rec_pos, rec_pos + rlen - 1]` ends before `query_start`.
-    if (query_contig_id >= 0 && hdr.chrom_id != query_contig_id) {
-      return false;
-    }
-    if (rec_pos > query_end) {
-      return false;
-    }
-    if (static_cast<std::int64_t>(rec_pos) + std::max<std::int32_t>(1, hdr.rlen) - 1 < query_start) {
-      infile.skip(static_cast<std::size_t>(shared_len) + static_cast<std::size_t>(hdr.l_indiv),
-                  "truncated BCF variant record");
+// Decode FILTER, a vector of indices into the header's filters. MISSING entries are skipped.
+std::vector<std::uint32_t> parse_filters(const char * buf, std::uint32_t buf_len,
+                                         std::uint32_t & idx, const Header & header) {
+  TypeDescriptor desc(buf, buf_len, idx);
+  if (desc.n_vals > 0 && !is_int_type(desc.type)) {
+    throw std::invalid_argument("expected integer BCF filter indices");
+  }
+  std::vector<std::uint32_t> filter_ids;
+  for (std::uint32_t i = 0; i < desc.n_vals; i++) {
+    std::int32_t filter_idx = parse_int(buf, buf_len, idx, desc.type_size);
+    if (filter_idx == INT32_MIN) {
       continue;
     }
-
-    // 4. Read the variable-length shared block (ID, REF, ALT, FILTER, and raw INFO bytes).
-    std::unique_ptr<char[]> shared_buf;
-    if (shared_len > 0) {
-      shared_buf.reset(new char[shared_len]);
-      infile.read_exact(shared_buf.get(), shared_len, "truncated BCF variant record");
+    if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
+        header.filters[filter_idx].empty()) {
+      throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
     }
-    const char * buf = shared_buf.get();
-
-    chrom_id = static_cast<std::uint32_t>(hdr.chrom_id);
-    pos = rec_pos;
-
-    // Normalize any reserved BCF float sentinel in QUAL to `BCF_FLOAT_MISSING` while keeping NaN intact.
-    qual_bits = is_bcf_float_missing(hdr.qual_bits) ? BCF_FLOAT_MISSING : hdr.qual_bits;
-
-    // 5. Decode ID, REF, and the `n_alleles - 1` ALT strings sequentially from `shared_buf`.
-    std::uint32_t idx = 0;
-    varid = parse_typed_string(buf, shared_len, idx);
-    ref = parse_typed_string(buf, shared_len, idx);
-
-    alts.resize(n_alleles - 1);
-    for (std::uint32_t i = 0; i < (n_alleles - 1); i++) {
-      alts[i] = parse_typed_string(buf, shared_len, idx);
-    }
-
-    // 6. Decode the FILTER vector of header dictionary indices (skipping any MISSING entries).
-    TypeDescriptor desc(buf, shared_len, idx);
-    if (desc.n_vals > 0 && !is_int_type(desc.type)) {
-      throw std::invalid_argument("expected integer BCF filter indices");
-    }
-    filter_ids.clear();
-    for (std::uint32_t i = 0; i < desc.n_vals; i++) {
-      std::int32_t filter_idx = parse_int(buf, shared_len, idx, desc.type_size);
-      if (filter_idx == INT32_MIN) {
-        continue;
-      }
-      if (filter_idx < 0 || static_cast<std::size_t>(filter_idx) >= header.filters.size() ||
-          header.filters[filter_idx].empty()) {
-        throw std::invalid_argument("unknown filter index: " + std::to_string(filter_idx));
-      }
-      filter_ids.push_back(static_cast<std::uint32_t>(filter_idx));
-    }
-
-    // 7. Transfer `shared_buf` into `Info` (which starts at `idx`) and read the raw sample block.
-    info = Info(std::move(shared_buf), shared_len, idx, &header, n_info);
-    sample_data = SampleData(infile, header, hdr.l_indiv, n_fmt, n_sample);
-    return true;
+    filter_ids.push_back(static_cast<std::uint32_t>(filter_idx));
   }
+  return filter_ids;
+}
+
+} // namespace
+
+/// @brief read the next variant record that overlaps `region`, returning false if there are none
+bool Variant::read(GzReader & infile, const Header & header, const Region & region) {
+  RecordHeader hdr{};
+  if (!find_record(infile, header, region, hdr)) {
+    return false;
+  }
+  chrom_id = static_cast<std::uint32_t>(hdr.chrom_id);
+  pos = hdr.pos0 + 1;
+  // Normalize any reserved BCF float sentinel in QUAL to `BCF_FLOAT_MISSING` while keeping NaN intact.
+  qual_bits = is_bcf_float_missing(hdr.qual_bits) ? BCF_FLOAT_MISSING : hdr.qual_bits;
+
+  // Read the rest of the shared block: ID, REF, ALT, FILTER, and the raw INFO bytes.
+  std::uint32_t shared_len = hdr.l_shared - FIXED_SHARED_BYTES;
+  std::unique_ptr<char[]> shared_buf;
+  if (shared_len > 0) {
+    shared_buf.reset(new char[shared_len]);
+    infile.read_exact(shared_buf.get(), shared_len, "truncated BCF variant record");
+  }
+  const char * buf = shared_buf.get();
+
+  // Decode the fields in front of INFO, which follow one another in the buffer.
+  std::uint32_t idx = 0;
+  varid = parse_typed_string(buf, shared_len, idx);
+  ref = parse_typed_string(buf, shared_len, idx);
+  alts.resize(hdr.n_allele() - 1);
+  for (std::string & alt : alts) {
+    alt = parse_typed_string(buf, shared_len, idx);
+  }
+  filter_ids = parse_filters(buf, shared_len, idx, header);
+
+  // `Info` takes over the buffer, where INFO starts at `idx`, and `SampleData` reads the
+  // per-sample block. Both decode their fields only when asked to.
+  info = Info(std::move(shared_buf), shared_len, idx, &header, hdr.n_info());
+  sample_data = SampleData(infile, header, hdr.l_indiv, hdr.n_fmt(), hdr.n_sample());
+  return true;
 }
 
 }

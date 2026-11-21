@@ -48,7 +48,7 @@ bool BCF::nextvar(Variant & var) {
   // A read that throws leaves the stream part-way through a record, where the following
   // bytes could pass for a record of their own. So only carry on after a successful read.
   exhausted = true;
-  exhausted = !var.read(infile, header, query_contig_id, query_start, query_end);
+  exhausted = !var.read(infile, header, region);
   return !exhausted;
 }
 
@@ -69,9 +69,9 @@ void BCF::set_region(const std::string & chrom, std::int32_t start, std::int32_t
 
   std::uint32_t contig_id = header.get_contig_id(chrom);
 
-  query_contig_id = static_cast<std::int32_t>(contig_id);
-  query_start = start;
-  query_end = end;
+  region.contig_id = static_cast<std::int32_t>(contig_id);
+  region.start = start;
+  region.end = end;
 
   // CSI bins use 0-based half-open `[beg, end)` coordinates, so convert 1-based `start`
   // to `max(0, start - 1)`. There is nothing to read if the index has no chunk for the

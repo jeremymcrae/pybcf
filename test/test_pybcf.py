@@ -507,22 +507,21 @@ class TestBcfReader(unittest.TestCase):
                 out.write(rec)
             self.check_samples_match_pysam(path)
 
-    def test_lifetimes_context_manager_and_sites_only_samples(self):
-        ''' check Cython wrapper lifetimes, context-manager close, FD cleanup, and 0-sample phased
-        '''
-        sample_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
-        sites_bcf = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
+    sample_bcf = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
 
-        # Chained temporaries must keep parent C++ objects alive
-        contigs = BcfReader(sample_bcf).header.contigs
+    def test_wrappers_keep_parents_alive(self):
+        ''' check header, info and sample objects work when nothing else holds their reader or variant
+        '''
+        # the readers and variants here are temporaries, which each result has to keep alive
+        contigs = BcfReader(self.sample_bcf).header.contigs
         self.assertGreater(len(contigs), 0)
-        info_keys = list(next(BcfReader(sample_bcf)).info)
+        info_keys = list(next(BcfReader(self.sample_bcf)).info)
         self.assertGreater(len(info_keys), 0)
-        gt = next(BcfReader(sample_bcf)).samples['GT']
+        gt = next(BcfReader(self.sample_bcf)).samples['GT']
         self.assertEqual(gt.ndim, 2)
 
-        # Variants and header remain usable after exiting `with`, while further reads fail cleanly
-        with BcfReader(sample_bcf) as bcf:
+        # variants and the header stay usable after the `with` block closes the reader
+        with BcfReader(self.sample_bcf) as bcf:
             var = next(bcf)
         self.assertGreater(len(var.info), 0)
         self.assertEqual(len(var.info), len(list(var.info)))
@@ -532,19 +531,29 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual([k for k, _ in sample_items], list(var.samples))
         np.testing.assert_array_equal(var.samples.get('GT'), gt)
         self.assertEqual(bcf.header.contigs, contigs)
+
+    def test_closed_reader_raises(self):
+        ''' check a closed reader raises ValueError when asked for more variants
+        '''
+        with BcfReader(self.sample_bcf) as bcf:
+            chrom = next(bcf).chrom
         with self.assertRaises(ValueError):
             next(bcf)
 
-        # Explicit close() is idempotent and prevents further iteration or fetch
-        explicit_bcf = BcfReader(sample_bcf)
-        explicit_bcf.close()
-        explicit_bcf.close()
+        # close() can be called more than once
+        bcf = BcfReader(self.sample_bcf)
+        bcf.close()
+        bcf.close()
         with self.assertRaises(ValueError):
-            next(explicit_bcf)
+            next(bcf)
         with self.assertRaises(ValueError):
-            explicit_bcf.fetch(contigs[0])
+            bcf.fetch(chrom)
 
-        # Internal wrapper types must reject direct Python instantiation rather than segfaulting
+    def test_wrappers_cannot_be_created_directly(self):
+        ''' check the header, variant, info and sample classes raise TypeError if created by hand
+        '''
+        bcf = BcfReader(self.sample_bcf)
+        var = next(bcf)
         for cls in (type(bcf.header), type(var.info), type(var.samples)):
             with self.assertRaises(TypeError):
                 cls()
@@ -568,30 +577,37 @@ class TestBcfReader(unittest.TestCase):
             with self.assertRaises(IndexError):
                 empty.chrom
 
-        # Sites-only BCF has 0 samples; phased should return an empty bool array
-        sites_var = next(BcfReader(sites_bcf))
-        self.assertEqual(sites_var.samples.phased.dtype, np.bool_)
-        self.assertEqual(len(sites_var.samples.phased), 0)
+    def test_phased_without_samples(self):
+        ''' check phasing is an empty bool array for a BCF without samples
+        '''
+        sites_bcf = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
+        var = next(BcfReader(sites_bcf))
+        self.assertEqual(var.samples.phased.dtype, np.bool_)
+        self.assertEqual(len(var.samples.phased), 0)
 
-        # Discarding a BcfReader must close its file immediately (no reference cycles),
-        # even after touching the header and variant wrappers
-        if Path('/proc/self/fd').exists():
-            gc.collect()
-            gc.disable()
-            try:
-                before = len(os.listdir('/proc/self/fd'))
-                for _ in range(25):
-                    r = BcfReader(sample_bcf)
-                    r.header.contigs
-                    r.samples
-                    var = next(r)
-                    list(var.info)
-                    var.samples['GT']
-                    del r, var
-                after = len(os.listdir('/proc/self/fd'))
-            finally:
-                gc.enable()
-            self.assertEqual(before, after)
+    @unittest.skipUnless(Path('/proc/self/fd').exists(), 'needs /proc to count open files')
+    def test_discarded_reader_closes_file(self):
+        ''' check a reader with no references left closes its file at once
+
+        This fails if the reader and its header or variants refer to each other in
+        a cycle, as the file then stays open until the garbage collector runs.
+        '''
+        gc.collect()
+        gc.disable()
+        try:
+            before = len(os.listdir('/proc/self/fd'))
+            for _ in range(25):
+                r = BcfReader(self.sample_bcf)
+                r.header.contigs
+                r.samples
+                var = next(r)
+                list(var.info)
+                var.samples['GT']
+                del r, var
+            after = len(os.listdir('/proc/self/fd'))
+        finally:
+            gc.enable()
+        self.assertEqual(before, after)
 
     def test_type_stubs_match_extension(self):
         ''' check reader.pyi and py.typed exist, parse cleanly, and match Cython classes

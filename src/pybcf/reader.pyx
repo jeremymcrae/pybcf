@@ -422,8 +422,8 @@ cdef class BcfReader:
     def __cinit__(self, path, index_path=None):
         self.thisptr = NULL
         self.is_open = False
-        # Store the absolute path. `fetch()` reopens the file by name to seek, which has
-        # to keep working if the working directory changes after opening.
+        # Store the absolute path, so repr() still names the right file if the working
+        # directory changes after opening.
         self.path = os.fsencode(os.path.abspath(path))
         index_path = b'' if index_path is None else os.fsencode(index_path)
 

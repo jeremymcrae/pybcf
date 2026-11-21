@@ -128,40 +128,19 @@ cdef inline object _decode_id(const string & s):
 # Plain snapshot of the header's names, filled in by `BcfReader.header`. It holds no
 # reference back to the reader, so accessing `.header` never delays closing the file.
 cdef class BcfHeader:
-    cdef list _samples, _contigs, _info, _filters, _formats
+    ''' names defined in the header of a BCF, each as a list of strings
+
+    Attributes:
+        samples: sample IDs in the BCF
+        contigs: contigs that variants can be on
+        filters: filters that variants can have
+        formats: per-sample FORMAT fields that variants can have
+        info: INFO fields that variants can have
+    '''
+    cdef readonly list samples, contigs, filters, formats, info
 
     def __init__(self, *args, **kwargs):
         raise TypeError('cannot instantiate BcfHeader directly')
-
-    @property
-    def samples(self):
-        ''' list of sample IDs in the BCF
-        '''
-        return self._samples
-
-    @property
-    def contigs(self):
-        ''' list of possible contigs in the BCF
-        '''
-        return self._contigs
-
-    @property
-    def filters(self):
-        ''' list of possible filters in the BCF
-        '''
-        return self._filters
-
-    @property
-    def formats(self):
-        ''' list of possible format fields per variant
-        '''
-        return self._formats
-
-    @property
-    def info(self):
-        ''' list of possible info fields per variant
-        '''
-        return self._info
 
 # Mapping-like view over `Variant.info`; holds `_variant` so the shared buffer
 # owned by `BcfVariant` stays alive as long as this `BcfInfo` wrapper exists.
@@ -289,40 +268,37 @@ cdef class BcfSampleData:
         '''
         return iter(self.keys())
 
-    # Allocate an uninitialized C-contiguous 1D NumPy array, take its raw pointer via a
-    # Cython typed memoryview (`&i_arr[0]` / `&f_arr[0]`), let C++ SIMD write straight
-    # into it without an intermediate `std::vector`, and reshape to `(n_samples, n_vals)` if needed.
+    # Convert one FORMAT field into its Python type. Strings become a list with a tuple
+    # per sample. Numbers become a NumPy array with nan for missing values: float64 for
+    # integer fields, float32 for float fields, and 2D if samples can have many values.
     cdef _decode_value(self, FormatLayout layout):
-        cdef uint32_t n_per_sample = layout.n_vals
-        cdef uint32_t n_samples = self.thisptr.n_samples
-        cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples
-        cdef tuple shape
-        if n_per_sample > 1:
-            shape = (n_samples, n_per_sample)
-        else:
-            shape = (n_samples,)
-        cdef double[::1] i_arr
-        cdef float[::1] f_arr
-
-        # Untyped (`flag`) FORMAT fields always have zero values, so they share the empty-int path.
-        if layout.data_type in (flag, int8, int16, int32):
-            if n_vals == 0:
-                return np.full(shape, np.nan, dtype=np.float64)
-            raw_arr = np.empty(n_vals, dtype=np.float64, order='C')
-            i_arr = raw_arr
-            self.thisptr.read_ints(layout, &i_arr[0])
-            return raw_arr.reshape(shape) if n_per_sample > 1 else raw_arr
-        elif layout.data_type == float_:
-            if n_vals == 0:
-                return np.full(shape, np.nan, dtype=np.float32)
-            raw_arr = np.empty(n_vals, dtype=np.float32, order='C')
-            f_arr = raw_arr
-            self.thisptr.read_floats(layout, &f_arr[0])
-            return raw_arr.reshape(shape) if n_per_sample > 1 else raw_arr
-        elif layout.data_type == char_:
+        if layout.data_type == char_:
             return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(layout)]
 
-        raise ValueError(f'unknown datatype: {<int>layout.data_type}')
+        cdef uint32_t n_samples = self.thisptr.n_samples
+        cdef uint64_t n_vals = <uint64_t>n_samples * layout.n_vals
+        cdef tuple shape
+        if layout.n_vals > 1:
+            shape = (n_samples, layout.n_vals)
+        else:
+            shape = (n_samples,)
+        cdef bint is_float = layout.data_type == float_
+        dtype = np.float32 if is_float else np.float64
+        if n_vals == 0:
+            return np.full(shape, np.nan, dtype=dtype)
+
+        # Allocate an uninitialized C-contiguous 1D array and let C++ write straight into
+        # it, through the pointer of a typed memoryview of the array.
+        arr = np.empty(n_vals, dtype=dtype, order='C')
+        cdef float[::1] floats
+        cdef double[::1] ints
+        if is_float:
+            floats = arr
+            self.thisptr.read_floats(layout, &floats[0])
+        else:
+            ints = arr
+            self.thisptr.read_ints(layout, &ints[0])
+        return arr.reshape(shape) if layout.n_vals > 1 else arr
 
     def get(self, key, default=None):
         cdef FormatLayout layout
@@ -513,11 +489,11 @@ cdef class BcfReader:
         cdef BcfHeader header
         if self._header is None:
             header = BcfHeader.__new__(BcfHeader)
-            header._samples = [x.decode('utf8') for x in self.thisptr.header.samples]
-            header._contigs = [x for x in self._get_contig_ids() if x is not None]
-            header._filters = [x for x in self._get_filter_ids() if x is not None]
-            header._formats = [x for x in self._get_format_ids() if x is not None]
-            header._info = [x for x in self._get_info_ids() if x is not None]
+            header.samples = [x.decode('utf8') for x in self.thisptr.header.samples]
+            header.contigs = [x for x in self._get_contig_ids() if x is not None]
+            header.filters = [x for x in self._get_filter_ids() if x is not None]
+            header.formats = [x for x in self._get_format_ids() if x is not None]
+            header.info = [x for x in self._get_info_ids() if x is not None]
             self._header = header
         return self._header
 

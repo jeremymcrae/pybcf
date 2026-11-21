@@ -487,9 +487,10 @@ class TestBcfReader(unittest.TestCase):
         stub_path = pkg_dir / 'reader.pyi'
         self.assertTrue(stub_path.is_file())
 
+        # The stub is only parsed, never run: type checkers accept `int | None` in stubs
+        # on every Python version, but running it fails before Python 3.10.
         source = stub_path.read_text(encoding='utf8')
         tree = ast.parse(source, filename=str(stub_path))
-        exec(compile(tree, str(stub_path), 'exec'), {})
 
         stub_classes = {
             node.name: {

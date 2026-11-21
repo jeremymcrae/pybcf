@@ -60,11 +60,11 @@ public:
   bool get_type(const char * key, std::size_t key_len, InfoType & out);
 
   std::int32_t get_int(const InfoType & type) const;
-  float get_float(const InfoType & type) const;
+  std::uint32_t get_float_bits(const InfoType & type) const;
   std::string get_string(const InfoType & type) const;
 
   std::vector<std::int32_t> get_ints(const InfoType & type) const;
-  std::vector<float> get_floats(const InfoType & type) const;
+  std::vector<std::uint32_t> get_floats_bits(const InfoType & type) const;
 };
 
 } // namespace bcf

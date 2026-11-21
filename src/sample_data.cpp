@@ -121,8 +121,8 @@ static inline bool cpu_has_avx2() {
   return supported;
 }
 
-// Convert 4 signed 32-bit integers to float64, replacing BCF missing/end-of-vector
-// sentinels (values <= miss_thresh, e.g. -128/-127 for int8) with NaN.
+// Convert 4 signed 32-bit integers to float64, replacing BCF missing/reserved
+// sentinels (values <= miss_thresh, e.g. -128..-121 for int8) with NaN.
 __attribute__((target("avx2")))
 static inline void store_epi32_as_double(__m128i vals, double * dst, __m256d miss_thresh, __m256d qnan) {
   __m256d d = _mm256_cvtepi32_pd(vals);
@@ -132,7 +132,7 @@ static inline void store_epi32_as_double(__m128i vals, double * dst, __m256d mis
 
 __attribute__((target("avx2")))
 static std::uint64_t parse_8bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
-  const __m256d miss_thresh = _mm256_set1_pd(-127.0);
+  const __m256d miss_thresh = _mm256_set1_pd(static_cast<double>(INT8_MIN + 7));
   const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
@@ -155,7 +155,7 @@ static std::uint64_t parse_8bit_ints_avx2(const char * src, double * dst, std::u
 
 __attribute__((target("avx2")))
 static std::uint64_t parse_16bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
-  const __m256d miss_thresh = _mm256_set1_pd(-32767.0);
+  const __m256d miss_thresh = _mm256_set1_pd(static_cast<double>(INT16_MIN + 7));
   const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
@@ -174,7 +174,7 @@ static std::uint64_t parse_16bit_ints_avx2(const char * src, double * dst, std::
 
 __attribute__((target("avx2")))
 static std::uint64_t parse_32bit_ints_avx2(const char * src, double * dst, std::uint64_t max_n) {
-  const __m256d miss_thresh = _mm256_set1_pd(static_cast<double>(INT32_MIN + 1));
+  const __m256d miss_thresh = _mm256_set1_pd(static_cast<double>(INT32_MIN + 7));
   const __m256d qnan = _mm256_set1_pd(std::nan(""));
 
   std::uint64_t n = 0;
@@ -221,9 +221,11 @@ static std::uint64_t parse_geno_avx2(const char * src, double * dst, std::uint64
 }
 
 // For diploid 8-bit GT (2 bytes per sample), phasing is stored in the low bit of
-// the second allele byte (odd byte offsets 1, 3, 5, ...).
+// the second allele byte (odd byte offsets 1, 3, 5, ...), with negative sentinel
+// bytes (haploid EOV/missing padding) treated as phased.
 __attribute__((target("avx2")))
 static std::uint32_t parse_phase_avx2(const char * src, std::uint8_t * dst, std::uint32_t n_samples) {
+  const __m128i zero = _mm_setzero_si128();
   const __m128i one = _mm_set1_epi8(1);
   const __m128i odd_lo = _mm_setr_epi8(1, 3, 5, 7, 9, 11, 13, 15, -1, -1, -1, -1, -1, -1, -1, -1);
   const __m128i odd_hi = _mm_setr_epi8(-1, -1, -1, -1, -1, -1, -1, -1, 1, 3, 5, 7, 9, 11, 13, 15);
@@ -233,6 +235,7 @@ static std::uint32_t parse_phase_avx2(const char * src, std::uint8_t * dst, std:
     __m128i lo = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + s * 2));
     __m128i hi = _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + s * 2 + 16));
     __m128i second = _mm_or_si128(_mm_shuffle_epi8(lo, odd_lo), _mm_shuffle_epi8(hi, odd_hi));
+    second = _mm_or_si128(second, _mm_cmpgt_epi8(zero, second));
     _mm_storeu_si128(reinterpret_cast<__m128i *>(dst + s), _mm_and_si128(second, one));
   }
   return s;
@@ -240,15 +243,15 @@ static std::uint32_t parse_phase_avx2(const char * src, std::uint8_t * dst, std:
 
 __attribute__((target("avx2")))
 static std::uint64_t parse_floats_avx2(const char * src, float * dst, std::uint64_t max_n) {
-  const __m256i miss1 = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_MISSING));
-  const __m256i miss2 = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_VECTOR_END));
+  const __m256i miss_lo = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_MISSING - 1));
+  const __m256i miss_hi = _mm256_set1_epi32(static_cast<std::int32_t>(BCF_FLOAT_RESERVED_MAX + 1));
   const __m256i qnan = _mm256_set1_epi32(0x7fc00000);
 
   std::uint64_t n = 0;
   for (; n + 8 <= max_n; n += 8) {
     __m256i bits = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + n * 4));
-    __m256i is_miss = _mm256_or_si256(_mm256_cmpeq_epi32(bits, miss1),
-                                      _mm256_cmpeq_epi32(bits, miss2));
+    __m256i is_miss = _mm256_and_si256(_mm256_cmpgt_epi32(bits, miss_lo),
+                                       _mm256_cmpgt_epi32(miss_hi, bits));
     bits = _mm256_blendv_epi8(bits, qnan, is_miss);
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + n), bits);
   }
@@ -280,7 +283,7 @@ void SampleData::read_8bit_ints(const FormatType & type, double * dst) const {
     n = parse_8bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const float64x2_t miss_thresh = vdupq_n_f64(-127.0);
+  const float64x2_t miss_thresh = vdupq_n_f64(static_cast<double>(INT8_MIN + 7));
   const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 16 <= max_n; n += 16) {
     int8x16_t data = vld1q_s8(reinterpret_cast<const std::int8_t *>(raw + offset + n));
@@ -317,7 +320,7 @@ void SampleData::read_16bit_ints(const FormatType & type, double * dst) const {
     n = parse_16bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const float64x2_t miss_thresh = vdupq_n_f64(-32767.0);
+  const float64x2_t miss_thresh = vdupq_n_f64(static_cast<double>(INT16_MIN + 7));
   const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 8 <= max_n; n += 8) {
     int16x8_t data = vld1q_s16(reinterpret_cast<const std::int16_t *>(raw + offset + n * 2));
@@ -350,7 +353,7 @@ void SampleData::read_32bit_ints(const FormatType & type, double * dst) const {
     n = parse_32bit_ints_avx2(raw + offset, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const float64x2_t miss_thresh = vdupq_n_f64(static_cast<double>(INT32_MIN + 1));
+  const float64x2_t miss_thresh = vdupq_n_f64(static_cast<double>(INT32_MIN + 7));
   const float64x2_t qnan_vec = vdupq_n_f64(std::nan(""));
   for (; n + 4 <= max_n; n += 4) {
     int32x4_t data = vld1q_s32(reinterpret_cast<const std::int32_t *>(raw + offset + n * 4));
@@ -436,6 +439,7 @@ void SampleData::read_phase(const FormatType & type, std::uint8_t * dst) const {
     for (; s + 8 <= n_samples; s += 8) {
       uint8x16_t initial = vld1q_u8(reinterpret_cast<const std::uint8_t *>(raw + type.offset + s * 2));
       uint8x8_t second = vshrn_n_u16(vreinterpretq_u16_u8(initial), 8);
+      second = vorr_u8(second, vshr_n_u8(second, 7));
       vst1_u8(dst + s, vand_u8(second, one));
     }
   }
@@ -469,12 +473,12 @@ void SampleData::read_floats(const FormatType & type, float * dst) const {
     n = parse_floats_avx2(src, dst, max_n);
   }
 #elif defined(__aarch64__)
-  const uint32x4_t miss1 = vdupq_n_u32(BCF_FLOAT_MISSING);
-  const uint32x4_t miss2 = vdupq_n_u32(BCF_FLOAT_VECTOR_END);
+  const uint32x4_t miss_lo = vdupq_n_u32(BCF_FLOAT_MISSING);
+  const uint32x4_t miss_hi = vdupq_n_u32(BCF_FLOAT_RESERVED_MAX);
   const uint32x4_t qnan_bits = vdupq_n_u32(0x7fc00000u);
   for (; n + 4 <= max_n; n += 4) {
     uint32x4_t bits = vld1q_u32(reinterpret_cast<const std::uint32_t *>(src + n * 4));
-    uint32x4_t is_miss = vorrq_u32(vceqq_u32(bits, miss1), vceqq_u32(bits, miss2));
+    uint32x4_t is_miss = vandq_u32(vcgeq_u32(bits, miss_lo), vcleq_u32(bits, miss_hi));
     vst1q_u32(reinterpret_cast<std::uint32_t *>(dst + n), vbslq_u32(is_miss, qnan_bits, bits));
   }
 #endif

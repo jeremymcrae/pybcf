@@ -71,10 +71,13 @@ bool IndexFile::open(const std::string & path, bool required) {
 
   for (std::int32_t i = 0; i < n_ref; i++) {
     std::unordered_map<std::uint32_t, Bin> bins;
-    std::uint32_t n_bins = 0;
+    std::int32_t n_bins = 0;
     infile.read_exact(&n_bins, sizeof(n_bins), "truncated CSI file");
+    if (n_bins < 0) {
+      throw std::invalid_argument("invalid CSI bin count");
+    }
 
-    for (std::uint32_t j = 0; j < n_bins; j++) {
+    for (std::int32_t j = 0; j < n_bins; j++) {
       std::uint32_t bin_idx = 0;
       std::uint64_t loffset = 0;
       std::int32_t n_chunks = 0;

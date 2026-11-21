@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from pybcf import BcfReader
-from pysam import VariantFile, tabix_index
+from pysam import BGZFile, VariantFile, tabix_index
 
 class TestIndexed(unittest.TestCase):
     ''' class to make sure BcfReader works correctly
@@ -235,6 +235,12 @@ class TestIndexed(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     BcfReader(tmp_bcf)
 
+            # Negative n_bin count in CSI must raise ValueError
+            with gzip.open(tmp_csi, 'wb') as gz:
+                gz.write(b'CSI\x01' + struct.pack('<iiiii', 14, 5, 0, 1, -1))
+            with self.assertRaises(ValueError):
+                BcfReader(tmp_bcf)
+
     def test_fetch_empty_chrom_on_fresh_reader(self):
         ''' check fetching an empty contig works without prior iteration
         '''
@@ -311,4 +317,19 @@ class TestIndexed(unittest.TestCase):
             self.assertEqual([v.pos for v in bcf.fetch('chr1', None, None)], [100, 200, 37000, 49153])
             self.assertEqual([v.pos for v in bcf.fetch('chr1', 36000, None)], [100, 37000, 49153])
             self.assertEqual([v.pos for v in bcf.fetch('chr1', None, 300)], [100, 200])
+
+            # Telomeric POS = 0 (pos0 = -1) records must be included when start is None or 0
+            telo_path = Path(tmpdir) / 'telomeric.bcf'
+            hdr = b'##fileformat=VCFv4.2\n##contig=<ID=chr1,length=1000,IDX=0>\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\x00'
+            rec_telo = struct.pack('<iiiIII', 0, -1, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17N\x00'
+            rec_norm = struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17A\x00'
+            with BGZFile(telo_path, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(hdr)) + hdr)
+                bgz.write(struct.pack('<II', len(rec_telo), 0) + rec_telo)
+                bgz.write(struct.pack('<II', len(rec_norm), 0) + rec_norm)
+            tabix_index(str(telo_path), preset='bcf', csi=True, force=True)
+
+            telo_bcf = BcfReader(telo_path)
+            self.assertEqual([v.pos for v in telo_bcf.fetch('chr1')], [0, 10])
+            self.assertEqual([v.pos for v in telo_bcf.fetch('chr1', 0, 5)], [0])
 

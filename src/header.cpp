@@ -77,9 +77,11 @@ void ensure_slot(std::vector<T> & vec, std::uint32_t idx) {
 
 Header::Header(const std::string & text) {
   // Without explicit IDX=... tags, BCF assigns IDs sequentially starting at 0
-  // for contigs and at 1 for INFO/FILTER/FORMAT (index 0 is reserved for PASS).
+  // for contigs and at 1 for the shared FILTER/INFO/FORMAT string dictionary
+  // (index 0 is reserved for PASS).
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
+  std::unordered_map<std::string, std::uint32_t> dict_ids = {{"PASS", 0}};
   bool seen_idx = false;
   bool seen_no_idx = false;
   bool seen_chrom = false;
@@ -148,13 +150,19 @@ Header::Header(const std::string & text) {
     const std::string & id = id_it->second;
     auto idx_it = data.find("IDX");
     if (kind == "contig") {
+      std::uint32_t entry_idx = 0;
       if (idx_it != data.end()) {
-        contig_idx = parse_idx(idx_it->second);
+        entry_idx = parse_idx(idx_it->second);
+        contig_idx = entry_idx + 1;
+      } else {
+        if (contig_ids.find(id) != contig_ids.end()) {
+          continue;
+        }
+        entry_idx = contig_idx++;
       }
-      ensure_slot(contigs, contig_idx);
-      contigs[contig_idx] = id;
-      contig_ids[id] = contig_idx;
-      contig_idx += 1;
+      ensure_slot(contigs, entry_idx);
+      contigs[entry_idx] = id;
+      contig_ids[id] = entry_idx;
     } else {
       if (idx_it == data.end() && kind == "FILTER" && id == "PASS") {
         // PASS is implicitly at index 0 when IDX tags are absent.
@@ -164,30 +172,43 @@ Header::Header(const std::string & text) {
       if ((seen_idx && !has_idx) || (seen_no_idx && has_idx)) {
         throw std::invalid_argument("invalid BCF - inconsistent IDX fields in " + id);
       }
+      std::uint32_t entry_idx = 0;
       if (has_idx) {
-        idx = parse_idx(idx_it->second);
+        entry_idx = parse_idx(idx_it->second);
         seen_idx = true;
       } else {
         seen_no_idx = true;
+        auto existing = dict_ids.find(id);
+        if (existing != dict_ids.end()) {
+          entry_idx = existing->second;
+        } else {
+          entry_idx = idx++;
+          dict_ids[id] = entry_idx;
+        }
       }
 
       if (kind == "INFO") {
         const std::string & num = data["Number"];
         bool is_list = !num.empty() && num != "1" && num != "0";
         bool is_flag = data["Type"] == "Flag" || num == "0";
-        ensure_slot(info, idx);
-        info[idx] = {id, is_list, is_flag};
+        ensure_slot(info, entry_idx);
+        if (info[entry_idx].id.empty()) {
+          info[entry_idx] = {id, is_list, is_flag};
+        }
       } else if (kind == "FORMAT") {
-        ensure_slot(format, idx);
-        format[idx] = {id, id == "GT"};
+        ensure_slot(format, entry_idx);
+        if (format[entry_idx].id.empty()) {
+          format[entry_idx] = {id, id == "GT"};
+        }
       } else if (kind == "FILTER") {
-        ensure_slot(filters, idx);
-        filters[idx] = id;
+        ensure_slot(filters, entry_idx);
+        if (filters[entry_idx].empty()) {
+          filters[entry_idx] = id;
+        }
         if (id == "PASS") {
           seen_pass = true;
         }
       }
-      idx += 1;
     }
   }
 

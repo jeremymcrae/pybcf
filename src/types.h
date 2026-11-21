@@ -25,17 +25,18 @@ static const std::uint8_t type_sizes[8] = {0, 1, 2, 4, 0, 4, 0, 1};
 
 static const std::uint32_t BCF_FLOAT_MISSING = 0x7f800001u;
 static const std::uint32_t BCF_FLOAT_VECTOR_END = 0x7f800002u;
+static const std::uint32_t BCF_FLOAT_RESERVED_MAX = 0x7f800007u;
 
 inline bool is_int_type(Types t) {
   return t == int8 || t == int16 || t == int32;
 }
 
-/// @brief check whether raw IEEE-754 float bits encode BCF missing or end-of-vector
+/// @brief check whether raw IEEE-754 float bits fall in BCF's reserved sentinel range
 inline bool is_bcf_float_missing(std::uint32_t bits) {
-  return bits == BCF_FLOAT_MISSING || bits == BCF_FLOAT_VECTOR_END;
+  return bits >= BCF_FLOAT_MISSING && bits <= BCF_FLOAT_RESERVED_MAX;
 }
 
-/// @brief parse a single BCF integer, preserving INT32_MIN (missing) vs INT32_MIN + 1 (end-of-vector)
+/// @brief parse a single BCF integer, mapping reserved values to INT32_MIN (missing) and preserving INT32_MIN + 1 (end-of-vector)
 inline std::int32_t parse_raw_int(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint8_t type_size) {
   if (static_cast<std::size_t>(idx) + type_size > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF integer");
@@ -44,13 +45,16 @@ inline std::int32_t parse_raw_int(const char * buf, std::size_t buf_len, std::ui
   if (type_size == 1) {
     std::int8_t v = 0;
     std::memcpy(&v, buf + idx, 1);
-    val = (v == INT8_MIN) ? INT32_MIN : (v == INT8_MIN + 1) ? (INT32_MIN + 1) : static_cast<std::int32_t>(v);
+    val = (v == INT8_MIN + 1) ? (INT32_MIN + 1) : (v <= INT8_MIN + 7) ? INT32_MIN : static_cast<std::int32_t>(v);
   } else if (type_size == 2) {
     std::int16_t v = 0;
     std::memcpy(&v, buf + idx, 2);
-    val = (v == INT16_MIN) ? INT32_MIN : (v == INT16_MIN + 1) ? (INT32_MIN + 1) : static_cast<std::int32_t>(v);
+    val = (v == INT16_MIN + 1) ? (INT32_MIN + 1) : (v <= INT16_MIN + 7) ? INT32_MIN : static_cast<std::int32_t>(v);
   } else if (type_size == 4) {
     std::memcpy(&val, buf + idx, 4);
+    if (val > INT32_MIN + 1 && val <= INT32_MIN + 7) {
+      val = INT32_MIN;
+    }
   } else {
     throw std::invalid_argument("invalid BCF integer width: " + std::to_string(type_size));
   }
@@ -58,26 +62,24 @@ inline std::int32_t parse_raw_int(const char * buf, std::size_t buf_len, std::ui
   return val;
 }
 
-/// @brief parse a single integer value from a char array (missing and end-of-vector mapped to INT32_MIN)
+/// @brief parse a single integer value from a char array (missing, reserved, and end-of-vector mapped to INT32_MIN)
 inline std::int32_t parse_int(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val = parse_raw_int(buf, buf_len, idx, type_size);
   return (val == INT32_MIN + 1) ? INT32_MIN : val;
 }
 
-/// @brief parse a single float value from a char array (BCF missing/EOV mapped to quiet NaN)
-inline float parse_float(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
+/// @brief read raw 32-bit float bits, mapping reserved non-EOV sentinels to BCF_FLOAT_MISSING
+inline std::uint32_t parse_raw_float(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
   if (static_cast<std::size_t>(idx) + 4 > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF float");
   }
   std::uint32_t bits = 0;
   std::memcpy(&bits, buf + idx, 4);
   idx += 4;
-  if (is_bcf_float_missing(bits)) {
-    return std::nanf("");
+  if (bits != BCF_FLOAT_VECTOR_END && is_bcf_float_missing(bits)) {
+    return BCF_FLOAT_MISSING;
   }
-  float val = 0.0f;
-  std::memcpy(&val, &bits, 4);
-  return val;
+  return bits;
 }
 
 /// @brief parse a NUL-padded or fixed-length BCF string from a char array

@@ -105,9 +105,10 @@ std::int32_t Info::get_int(const InfoType & type) const {
   return parse_int(buf.get(), buf_len, idx, type.type_size);
 }
 
-float Info::get_float(const InfoType & type) const {
+std::uint32_t Info::get_float_bits(const InfoType & type) const {
   std::uint32_t idx = type.offset;
-  return parse_float(buf.get(), buf_len, idx);
+  std::uint32_t bits = parse_raw_float(buf.get(), buf_len, idx);
+  return (bits == BCF_FLOAT_VECTOR_END) ? BCF_FLOAT_MISSING : bits;
 }
 
 std::string Info::get_string(const InfoType & type) const {
@@ -130,26 +131,17 @@ std::vector<std::int32_t> Info::get_ints(const InfoType & type) const {
   return vals;
 }
 
-std::vector<float> Info::get_floats(const InfoType & type) const {
-  std::vector<float> vals;
+std::vector<std::uint32_t> Info::get_floats_bits(const InfoType & type) const {
+  std::vector<std::uint32_t> vals;
   vals.reserve(type.n_vals);
   const char * raw = buf.get();
   std::uint32_t idx = type.offset;
   for (std::uint32_t j = 0; j < type.n_vals; j++) {
-    if (static_cast<std::size_t>(idx) + 4 > buf_len) {
-      throw std::invalid_argument("buffer overflow while reading BCF float");
-    }
-    std::uint32_t bits = 0;
-    std::memcpy(&bits, raw + idx, 4);
-    idx += 4;
+    std::uint32_t bits = parse_raw_float(raw, buf_len, idx);
     if (bits == BCF_FLOAT_VECTOR_END) {
       break;
     }
-    float val = std::nanf("");
-    if (bits != BCF_FLOAT_MISSING) {
-      std::memcpy(&val, &bits, 4);
-    }
-    vals.push_back(val);
+    vals.push_back(bits);
   }
   return vals;
 }

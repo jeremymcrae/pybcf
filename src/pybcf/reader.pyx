@@ -4,15 +4,16 @@ from pathlib import Path
 
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize
 from libcpp cimport bool
-from libc.math cimport isnan
 from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint32_t, int32_t, uint64_t, INT32_MIN, INT32_MAX
+from libc.string cimport memcpy
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 
 import numpy as np
 
 cdef extern from 'types.h' namespace 'bcf':
+    cdef uint32_t BCF_FLOAT_MISSING
     cdef enum Types:
         flag
         int8
@@ -71,10 +72,10 @@ cdef extern from 'info.h' namespace 'bcf':
         vector[NamedInfo] & get_fields() except +
         bool get_type(const char *, size_t, InfoType &) except +
         int32_t get_int(const InfoType &) except +
-        float get_float(const InfoType &) except +
+        uint32_t get_float_bits(const InfoType &) except +
         string get_string(const InfoType &) except +
         vector[int32_t] get_ints(const InfoType &) except +
-        vector[float] get_floats(const InfoType &) except +
+        vector[uint32_t] get_floats_bits(const InfoType &) except +
 
 cdef extern from 'sample_data.h' namespace 'bcf':
     cdef struct FormatType:
@@ -106,11 +107,20 @@ cdef extern from 'variant.h' namespace 'bcf':
         int32_t pos
         string ref
         vector[string] alts
-        float qual
+        uint32_t qual_bits
         string varid
         vector[uint32_t] filter_ids
         Info info
         SampleData sample_data
+
+# Decode raw IEEE-754 float bits, mapping BCF's missing sentinel to None while
+# preserving genuine NaN values as float('nan').
+cdef inline object _decode_float(uint32_t bits):
+    if bits == BCF_FLOAT_MISSING:
+        return None
+    cdef float val
+    memcpy(&val, &bits, sizeof(val))
+    return val
 
 # Lookup tables on BcfReader map integer header IDX values directly to decoded
 # Python strings, avoiding repeated C++ string copies and UTF-8 decoding per variant.
@@ -215,7 +225,6 @@ cdef class BcfInfo:
 
     cdef _decode_value(self, InfoType info_type):
         cdef InfoKind datatype = info_type.type
-        cdef float f_val
         cdef int32_t i_val
 
         if datatype == info_missing:
@@ -223,8 +232,7 @@ cdef class BcfInfo:
         elif datatype == info_flag:
             return True
         elif datatype == info_scalar_float:
-            f_val = self.thisptr.get_float(info_type)
-            return None if isnan(f_val) else f_val
+            return _decode_float(self.thisptr.get_float_bits(info_type))
         elif datatype == info_scalar_int:
             i_val = self.thisptr.get_int(info_type)
             return None if i_val == INT32_MIN else i_val
@@ -233,7 +241,7 @@ cdef class BcfInfo:
         elif datatype == info_vector_string:
             return tuple(self.thisptr.get_string(info_type).decode('utf8').split(','))
         elif datatype == info_vector_float:
-            return tuple([None if isnan(x) else x for x in self.thisptr.get_floats(info_type)])
+            return tuple([_decode_float(x) for x in self.thisptr.get_floats_bits(info_type)])
         elif datatype == info_vector_int:
             return tuple([None if x == INT32_MIN else x for x in self.thisptr.get_ints(info_type)])
 
@@ -401,9 +409,7 @@ cdef class BcfVariant:
     def qual(self):
         ''' variant quality score (or None)
         '''
-        if isnan(self.thisptr.qual):
-            return None
-        return self.thisptr.qual
+        return _decode_float(self.thisptr.qual_bits)
 
     @property
     def filter(self):
@@ -531,7 +537,7 @@ cdef class BcfReader:
         if not self.is_open:
             raise ValueError('bcf is closed')
 
-        cdef int32_t region_start = 1 if start is None else start
+        cdef int32_t region_start = 0 if start is None else start
         cdef int32_t region_stop = INT32_MAX if stop is None else stop
         self.thisptr.set_region(chrom.encode('utf8'), region_start, region_stop)
         return iter(self)

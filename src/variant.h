@@ -30,7 +30,7 @@ public:
   std::int32_t rlen = 0;
   std::string ref;
   std::vector<std::string> alts;
-  float qual = std::nanf("");
+  std::uint32_t qual_bits = BCF_FLOAT_MISSING;
   std::string varid;
   std::vector<std::uint32_t> filter_ids;
   Info info;

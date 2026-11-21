@@ -216,6 +216,32 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(bcf.header.filters, ['LowQual', 'PASS'])
             self.assertEqual(list(bcf), [])
 
+            # Headers without IDX= share one string dictionary across FILTER/INFO/FORMAT and ignore duplicates
+            shared_dict_path = Path(tmpdir) / 'shared_dict.bcf'
+            shared_hdr = (
+                '##fileformat=VCFv4.2\n'
+                '##contig=<ID=chr1,length=1000>\n'
+                '##contig=<ID=chr1,length=1000>\n'
+                '##INFO=<ID=DP,Number=1,Type=Integer,Description="info dp">\n'
+                '##INFO=<ID=DP,Number=1,Type=Integer,Description="dup info dp">\n'
+                '##FORMAT=<ID=GT,Number=1,Type=String,Description="gt">\n'
+                '##FORMAT=<ID=DP,Number=1,Type=Integer,Description="fmt dp">\n'
+                '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="gq">\n'
+                '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n\x00'
+            ).encode('utf8')
+            shared_rec = struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 1, (3 << 24) | 1) + b'\x07\x17A\x00\x11\x01\x11\x63'
+            indiv_rec = b'\x11\x02\x21\x02\x04\x11\x01\x11\x0f\x11\x03\x11\x2a'
+            with BGZFile(shared_dict_path, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(shared_hdr)) + shared_hdr)
+                bgz.write(struct.pack('<II', len(shared_rec), len(indiv_rec)) + shared_rec + indiv_rec)
+            sd_bcf = BcfReader(shared_dict_path)
+            self.assertEqual(sd_bcf.header.contigs, ['chr1'])
+            self.assertEqual(sd_bcf.header.formats, ['DP', 'GT', 'GQ'])
+            sd_var = next(sd_bcf)
+            self.assertEqual(sd_var.info['DP'], 99)
+            self.assertEqual(float(sd_var.samples['DP'][0]), 15.0)
+            self.assertEqual(float(sd_var.samples['GQ'][0]), 42.0)
+
             for bad_hdr in (
                 '##fileformat=VCFv4.2\n#CHROM\tPOS\n#CHROM\tPOS\n\x00',
                 '##fileformat=VCFv4.2\n##contig=<ID=chr1,IDX=-1>\n#CHROM\tPOS\n\x00',
@@ -555,6 +581,77 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(rec_pybcf.samples['FF'].shape, (2,))
             self.assertTrue(np.isnan(rec_pybcf.samples['FF']).all())
             self.assertEqual(rec_pybcf.samples['FT'], [('',), ('',)])
+
+            # Genuine IEEE NaN vs BCF MISSING/reserved sentinels, plus explicit MISSING in FILTER
+            nan_bcf = Path(tmpdir) / 'nan_and_reserved.bcf'
+            nan_info = (
+                b'\x11\x02\x11\x87'  # IS = 0x87 (reserved int8) -> None
+                + b'\x11\x03\x41\x05\x80\x82\x81'  # IV = [5, missing, reserved 0x82, EOV] -> (5, None, None)
+                + b'\x11\x04\x15' + struct.pack('<I', 0x7FC00000)  # FS = quiet NaN -> float('nan')
+                + b'\x11\x05\x45' + struct.pack('<fIII', 1.5, 0x7FC00000, 0x7F800001, 0x7F800007)  # FV -> (1.5, nan, None, None)
+            )
+            nan_indiv = (
+                b'\x11\x0a\x11\x82\x14'  # DP = [reserved 0x82, 20] -> [nan, 20.0]
+                + b'\x11\x0b\x15' + struct.pack('<If', 0x7F800005, 2.5)  # FF = [reserved sNaN, 2.5] -> [nan, 2.5]
+            )
+            nan_shared = (
+                struct.pack('<iiiIII', 0, 9, 1, 0x7FC00000, (1 << 16) | 4, (2 << 24) | 2)
+                + b'\x07\x17A\x11\x80'  # FILTER = [0x80 missing int8] -> []
+                + nan_info
+            )
+            with BGZFile(nan_bcf, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(header_bytes)) + header_bytes)
+                bgz.write(struct.pack('<II', len(nan_shared), len(nan_indiv)) + nan_shared + nan_indiv)
+
+            nan_rec = next(BcfReader(nan_bcf))
+            self.assertTrue(np.isnan(nan_rec.qual))
+            self.assertEqual(nan_rec.filter, [])
+            self.assertIsNone(nan_rec.info['IS'])
+            self.assertEqual(nan_rec.info['IV'], (5, None, None))
+            self.assertTrue(np.isnan(nan_rec.info['FS']))
+            fv = nan_rec.info['FV']
+            self.assertEqual(len(fv), 4)
+            self.assertEqual(fv[0], 1.5)
+            self.assertTrue(np.isnan(fv[1]))
+            self.assertIsNone(fv[2])
+            self.assertIsNone(fv[3])
+            self.assertTrue(np.isnan(nan_rec.samples['DP'][0]))
+            self.assertEqual(nan_rec.samples['DP'][1], 20.0)
+            self.assertTrue(np.isnan(nan_rec.samples['FF'][0]))
+            self.assertEqual(nan_rec.samples['FF'][1], np.float32(2.5))
+
+            # Exercise SIMD paths (36 samples) on reserved int8/int16/int32/float sentinels
+            simd_res_bcf = Path(tmpdir) / 'simd_reserved.bcf'
+            n_smp = 36
+            smp_cols = '\t'.join(f'S{i}' for i in range(n_smp))
+            simd_hdr = (
+                '##fileformat=VCFv4.2\n'
+                '##contig=<ID=chr1,length=1000,IDX=0>\n'
+                '##FORMAT=<ID=I8,Number=1,Type=Integer,Description="i8",IDX=1>\n'
+                '##FORMAT=<ID=I16,Number=1,Type=Integer,Description="i16",IDX=2>\n'
+                '##FORMAT=<ID=I32,Number=1,Type=Integer,Description="i32",IDX=3>\n'
+                '##FORMAT=<ID=FL,Number=1,Type=Float,Description="fl",IDX=4>\n'
+                f'#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{smp_cols}\n\x00'
+            ).encode('utf8')
+            simd_indiv = (
+                b'\x11\x01\x11' + b''.join(b'\x87' if i % 2 == 0 else b'\x88' for i in range(n_smp))
+                + b'\x11\x02\x12' + b''.join(struct.pack('<h', -32761 if i % 2 == 0 else -32760) for i in range(n_smp))
+                + b'\x11\x03\x13' + b''.join(struct.pack('<i', -2147483641 if i % 2 == 0 else -2147483640) for i in range(n_smp))
+                + b'\x11\x04\x15' + b''.join(struct.pack('<I', 0x7F800007 if i % 2 == 0 else 0x7FC00000) for i in range(n_smp))
+            )
+            simd_shared = struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, (4 << 24) | n_smp) + b'\x07\x17A\x00'
+            with BGZFile(simd_res_bcf, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(simd_hdr)) + simd_hdr)
+                bgz.write(struct.pack('<II', len(simd_shared), len(simd_indiv)) + simd_shared + simd_indiv)
+
+            simd_rec = next(BcfReader(simd_res_bcf))
+            np.testing.assert_array_equal(np.isnan(simd_rec.samples['I8']), [i % 2 == 0 for i in range(n_smp)])
+            np.testing.assert_array_equal(simd_rec.samples['I8'][1::2], np.full(n_smp // 2, -120.0))
+            np.testing.assert_array_equal(np.isnan(simd_rec.samples['I16']), [i % 2 == 0 for i in range(n_smp)])
+            np.testing.assert_array_equal(simd_rec.samples['I16'][1::2], np.full(n_smp // 2, -32760.0))
+            np.testing.assert_array_equal(np.isnan(simd_rec.samples['I32']), [i % 2 == 0 for i in range(n_smp)])
+            np.testing.assert_array_equal(simd_rec.samples['I32'][1::2], np.full(n_smp // 2, -2147483640.0))
+            self.assertTrue(np.isnan(simd_rec.samples['FL']).all())
 
     def test_corrupt_or_missing_bcf_raises_value_error(self):
         ''' check GzReader raises ValueError on missing or truncated/corrupt BCF streams

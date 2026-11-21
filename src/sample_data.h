@@ -13,22 +13,24 @@
 
 namespace bcf {
 
-/// @brief contains details of a FORMAT field in the sample buffer
+// Byte location and layout of one FORMAT field inside a variant's sample buffer.
 struct FormatType {
-  Types data_type;
-  std::uint8_t type_size;
-  std::uint32_t offset;
-  std::uint32_t n_vals;
-  bool is_geno;
+  Types data_type;         // BCF atomic type (int8/int16/int32/float_/char_)
+  std::uint8_t type_size;  // byte width of a single element (1, 2, or 4)
+  std::uint32_t offset;    // start byte offset of sample 0's values in `buf`
+  std::uint32_t n_vals;    // number of values stored per sample (max ploidy/vector length)
+  bool is_geno;            // true when this field is GT (uses allele/phase bit-packing)
 };
 
+// Associates a FORMAT tag's header dictionary index and metadata with its buffer slice.
 struct NamedFormat {
   std::uint32_t id_idx;
   const FormatField * field;
   FormatType format;
 };
 
-// class to parse data types for each sample
+// Holds the raw per-sample ("individual") byte block of a BCF record and decodes
+// requested FORMAT fields on demand directly into caller-supplied output buffers.
 class SampleData {
   const Header * header = nullptr;
   std::uint32_t n_fmt = 0;

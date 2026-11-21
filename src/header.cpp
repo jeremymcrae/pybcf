@@ -7,6 +7,7 @@ namespace bcf {
 
 namespace {
 
+// Upper sanity bound on `IDX=` values to prevent malformed headers from allocating huge vectors.
 const unsigned long MAX_HEADER_IDX = 1UL << 22;
 
 /// @brief strip specified characters from the ends of a string
@@ -40,7 +41,8 @@ std::uint32_t parse_idx(const std::string & s) {
   }
 }
 
-/// @brief parse the comma-separated fields of an info/format/contig line
+/// @brief parse `<Key=Value,...>` attributes from a `##INFO`/`##FORMAT`/`##FILTER`/`##contig` line
+// Tracks `"` quotes and `\` escapes so commas inside `Description="..."` do not split fields.
 std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
   text = trim(trim(text, " \t\r"), "<>");
   std::unordered_map<std::string, std::string> data;
@@ -76,9 +78,10 @@ void ensure_slot(std::vector<T> & vec, std::uint32_t idx) {
 } // namespace
 
 Header::Header(const std::string & text) {
-  // Without explicit IDX=... tags, BCF assigns IDs sequentially starting at 0
-  // for contigs and at 1 for the shared FILTER/INFO/FORMAT string dictionary
-  // (index 0 is reserved for PASS).
+  // BCF headers have two separate integer dictionaries:
+  //   1. Contigs: numbered from 0 in `##contig` order unless overridden by `IDX=...`.
+  //   2. Strings: shared across `FILTER`, `INFO`, and `FORMAT`, with `PASS` implicitly
+  //      assigned 0 and subsequent unique names numbered from 1 when `IDX=...` is absent.
   std::uint32_t idx = 1;
   std::uint32_t contig_idx = 0;
   std::unordered_map<std::string, std::uint32_t> dict_ids = {{"PASS", 0}};
@@ -87,7 +90,7 @@ Header::Header(const std::string & text) {
   bool seen_chrom = false;
   bool seen_pass = false;
 
-  // Scan the header text line by line without copying intermediate line strings.
+  // Scan the header text line by line in place (stripping trailing `\r` and BCF's trailing `\0`).
   size_t pos = 0;
   while (pos < text.size()) {
     size_t nl = text.find('\n', pos);
@@ -104,7 +107,7 @@ Header::Header(const std::string & text) {
       continue;
     }
     if (text[line_start + 1] != '#') {
-      // Single-'#' #CHROM column header: extract tab-separated sample names after FORMAT.
+      // Single-'#' `#CHROM` column header: sample IDs are the tab-separated columns after `FORMAT`.
       if ((line_len == 6 && text.compare(line_start, 6, "#CHROM") == 0) ||
           (line_len > 6 && text.compare(line_start, 7, "#CHROM\t") == 0)) {
         if (seen_chrom) {
@@ -131,7 +134,7 @@ Header::Header(const std::string & text) {
       continue;
     }
 
-    // Double-'#' metadata line (e.g. ##INFO=<ID=...,Number=...,Type=...>).
+    // Double-'#' metadata line (e.g. `##INFO=<ID=DP,Number=1,Type=Integer,IDX=3>`).
     size_t body_start = line_start + 2;
     size_t eq = text.find('=', body_start);
     if (eq == std::string::npos || eq >= clean_end) {
@@ -168,6 +171,8 @@ Header::Header(const std::string & text) {
         // PASS is implicitly at index 0 when IDX tags are absent.
         continue;
       }
+      // Reject headers that mix explicit `IDX=` lines with unindexed lines, since
+      // implicit numbering could collide with explicit indices.
       bool has_idx = idx_it != data.end();
       if ((seen_idx && !has_idx) || (seen_no_idx && has_idx)) {
         throw std::invalid_argument("invalid BCF - inconsistent IDX fields in " + id);
@@ -178,6 +183,7 @@ Header::Header(const std::string & text) {
         seen_idx = true;
       } else {
         seen_no_idx = true;
+        // Reuse the same dictionary ID if a tag name (e.g. `DP`) appears in both INFO and FORMAT.
         auto existing = dict_ids.find(id);
         if (existing != dict_ids.end()) {
           entry_idx = existing->second;
@@ -187,6 +193,7 @@ Header::Header(const std::string & text) {
         }
       }
 
+      // Store the first definition seen for each `(kind, entry_idx)`.
       if (kind == "INFO") {
         const std::string & num = data["Number"];
         bool is_list = !num.empty() && num != "1" && num != "0";
@@ -212,6 +219,7 @@ Header::Header(const std::string & text) {
     }
   }
 
+  // Ensure `PASS` is always available at filter index 0 unless explicitly placed elsewhere.
   if (!seen_pass && (filters.empty() || filters[0].empty())) {
     ensure_slot(filters, 0);
     filters[0] = "PASS";

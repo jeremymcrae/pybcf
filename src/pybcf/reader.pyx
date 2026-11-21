@@ -12,6 +12,7 @@ from libcpp.vector cimport vector
 
 import numpy as np
 
+# Cython declarations for the C++ BCF reader classes in `src/*.h`.
 cdef extern from 'types.h' namespace 'bcf':
     cdef uint32_t BCF_FLOAT_MISSING
     cdef enum Types:
@@ -127,6 +128,8 @@ cdef inline object _decode_float(uint32_t bits):
 cdef inline tuple _decode_ids(vector[string] vec):
     return tuple([None if x.empty() else x.decode('utf8') for x in vec])
 
+# Thin Python view over `BCF.header`; holds a reference to `_reader` so the
+# underlying C++ `Header` cannot be freed while `BcfHeader` is still alive.
 cdef class BcfHeader:
     cdef Header * thisptr
     cdef BcfReader _reader
@@ -180,6 +183,8 @@ cdef class BcfHeader:
             self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
         return self._info
 
+# Mapping-like view over `Variant.info`; holds `_variant` so the shared buffer
+# owned by `BcfVariant` stays alive as long as this `BcfInfo` wrapper exists.
 cdef class BcfInfo:
     cdef Info * thisptr
     cdef BcfVariant _variant
@@ -192,6 +197,8 @@ cdef class BcfInfo:
         self.thisptr = info
         self._variant = variant
 
+    # Borrow Python's internal UTF-8 buffer directly via `PyUnicode_AsUTF8AndSize`
+    # so key lookups do not allocate a temporary `bytes` or `std::string`.
     cdef inline bool _get_type(self, key, InfoType & info_type):
         if not isinstance(key, str):
             return False
@@ -223,6 +230,8 @@ cdef class BcfInfo:
         '''
         return iter(self.keys())
 
+    # Convert a single indexed INFO field from raw BCF bytes into its Python type
+    # (`bool`, `int`, `float`, `str`, `None`, or a `tuple` for `Number != 1` fields).
     cdef _decode_value(self, InfoType info_type):
         cdef InfoKind datatype = info_type.type
         cdef int32_t i_val
@@ -257,6 +266,8 @@ cdef class BcfInfo:
             raise KeyError(f'unknown INFO field: {_key}')
         return self._decode_value(info_type)
 
+# Mapping-like view over `Variant.sample_data`; decodes requested FORMAT fields
+# directly into NumPy arrays (or lists of string tuples for `char_` fields).
 cdef class BcfSampleData:
     cdef SampleData * thisptr
     cdef BcfVariant _variant
@@ -300,6 +311,9 @@ cdef class BcfSampleData:
         '''
         return iter(self.keys())
 
+    # Allocate an uninitialized C-contiguous 1D NumPy array, take its raw pointer via a
+    # Cython typed memoryview (`&i_arr[0]` / `&f_arr[0]`), let C++ SIMD write straight
+    # into it without an intermediate `std::vector`, and reshape to `(n_samples, n_vals)` if needed.
     cdef _decode_value(self, FormatType fmt_type):
         cdef uint32_t n_per_sample = fmt_type.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
@@ -343,6 +357,8 @@ cdef class BcfSampleData:
             raise KeyError(f'unknown FORMAT field: {_key}')
         return self._decode_value(fmt_type)
 
+    # Decode GT phasing lazily into a `uint8` array of `0`/`1` bytes and reinterpret
+    # the buffer in place as a zero-copy `bool` NumPy array (`raw_arr.view(np.bool_)`).
     @property
     def phased(self):
         ''' whether genotypes are phased '''
@@ -356,6 +372,8 @@ cdef class BcfSampleData:
         self.thisptr.read_phase(fmt_type, &p_arr[0])
         return raw_arr.view(np.bool_)
 
+# Owns a C++ `Variant` value inline (`thisptr`) and resolves integer dictionary IDs
+# (`chrom_id`, `filter_ids`) via cached Python string tuples on `_reader`.
 cdef class BcfVariant:
     cdef Variant thisptr
     cdef BcfReader _reader
@@ -466,6 +484,7 @@ cdef class BcfReader:
             self.thisptr = NULL
         self.is_open = False
 
+    # Lazily build and cache IDX-indexed Python string tuples once per open BCF file.
     cdef inline tuple _get_contig_ids(self):
         if self._contig_ids is None:
             self._contig_ids = _decode_ids(self.thisptr.header.contigs)
@@ -503,6 +522,7 @@ cdef class BcfReader:
         '''
         if not self.is_open:
             raise ValueError('bcf is closed')
+        # Allocate `BcfVariant` via `__new__` (bypassing `__init__`, which forbids direct user construction).
         cdef BcfVariant var = BcfVariant.__new__(BcfVariant, self)
         if not self.thisptr.nextvar(var.thisptr):
             raise StopIteration
@@ -537,6 +557,7 @@ cdef class BcfReader:
         if not self.is_open:
             raise ValueError('bcf is closed')
 
+        # Default `start=None` to 0 so telomeric `POS = 0` records on `chrom` are included.
         cdef int32_t region_start = 0 if start is None else start
         cdef int32_t region_stop = INT32_MAX if stop is None else stop
         self.thisptr.set_region(chrom.encode('utf8'), region_start, region_stop)

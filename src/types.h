@@ -12,6 +12,7 @@
 
 namespace bcf {
 
+// Low 4-bit type codes used in BCF2 type-descriptor bytes (codes 4, 6, 8..15 are reserved).
 enum Types : std::uint8_t {
   flag = 0,
   int8 = 1,
@@ -21,8 +22,11 @@ enum Types : std::uint8_t {
   char_ = 7,
 };
 
+// Byte size of one element for each BCF atomic type code (indexed by `Types`).
 static const std::uint8_t type_sizes[8] = {0, 1, 2, 4, 0, 4, 0, 1};
 
+// BCF2 encodes float MISSING, END_OF_VECTOR, and 5 future reserved values as IEEE-754
+// signaling NaNs (`0x7f800001..0x7f800007`), keeping quiet NaN (`0x7fc00000`) for literal NaN.
 static const std::uint32_t BCF_FLOAT_MISSING = 0x7f800001u;
 static const std::uint32_t BCF_FLOAT_VECTOR_END = 0x7f800002u;
 static const std::uint32_t BCF_FLOAT_RESERVED_MAX = 0x7f800007u;
@@ -36,7 +40,9 @@ inline bool is_bcf_float_missing(std::uint32_t bits) {
   return bits >= BCF_FLOAT_MISSING && bits <= BCF_FLOAT_RESERVED_MAX;
 }
 
-/// @brief parse a single BCF integer, mapping reserved values to INT32_MIN (missing) and preserving INT32_MIN + 1 (end-of-vector)
+/// @brief parse one BCF integer, keeping END_OF_VECTOR (`INT32_MIN + 1`) distinct from MISSING (`INT32_MIN`)
+// BCF2 reserves the lowest 8 signed values of each integer width (`INT*_MIN .. INT*_MIN + 7`):
+// `+0` is MISSING, `+1` is END_OF_VECTOR, and `+2..+7` are reserved (treated as MISSING).
 inline std::int32_t parse_raw_int(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint8_t type_size) {
   if (static_cast<std::size_t>(idx) + type_size > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF integer");
@@ -62,13 +68,13 @@ inline std::int32_t parse_raw_int(const char * buf, std::size_t buf_len, std::ui
   return val;
 }
 
-/// @brief parse a single integer value from a char array (missing, reserved, and end-of-vector mapped to INT32_MIN)
+/// @brief parse a single BCF integer when both MISSING and END_OF_VECTOR should map to `INT32_MIN`
 inline std::int32_t parse_int(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint8_t type_size) {
   std::int32_t val = parse_raw_int(buf, buf_len, idx, type_size);
   return (val == INT32_MIN + 1) ? INT32_MIN : val;
 }
 
-/// @brief read raw 32-bit float bits, mapping reserved non-EOV sentinels to BCF_FLOAT_MISSING
+/// @brief read raw 32-bit float bits, collapsing reserved non-EOV sentinels to `BCF_FLOAT_MISSING`
 inline std::uint32_t parse_raw_float(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
   if (static_cast<std::size_t>(idx) + 4 > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF float");
@@ -82,7 +88,7 @@ inline std::uint32_t parse_raw_float(const char * buf, std::size_t buf_len, std:
   return bits;
 }
 
-/// @brief parse a NUL-padded or fixed-length BCF string from a char array
+/// @brief parse a fixed `size`-byte BCF string slice, stopping early at any NUL padding byte
 inline std::string parse_string(const char * buf, std::size_t buf_len, std::uint32_t & idx, std::uint32_t size) {
   if (static_cast<std::size_t>(idx) + size > buf_len) {
     throw std::invalid_argument("buffer overflow while reading BCF string");
@@ -94,13 +100,10 @@ inline std::string parse_string(const char * buf, std::size_t buf_len, std::uint
   return std::string(start, len);
 }
 
-// class to handle the typed values in BCF files
-//
-// This takes in a single 8-bit value, which has two sub-components. The
-// first four bits correspond to a number for the atomic type, as defined in the
-// Types enum above. The other four bits correspond to the number of elements,
-// except if the value=15, in which case the number is determined from the
-// following typed integer in the buffer.
+// Decodes a BCF2 type-descriptor prefix:
+// - Bits 0..3 hold the atomic `Types` code.
+// - Bits 4..7 hold the element count (`0..14`), unless equal to `15`, which signals
+//   an overflow length stored immediately afterwards as a typed BCF integer.
 class Typed {
 public:
   Types type = flag;
@@ -111,6 +114,7 @@ public:
   Typed(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
     set_type(get_byte(buf, buf_len, idx));
     if (n_vals == 15) {
+      // Read the follow-up integer type byte and decode the true vector length.
       std::uint8_t len_byte = get_byte(buf, buf_len, idx);
       std::uint8_t len_type = len_byte & 0x0F;
       if ((len_byte >> 4) > 1 || (len_type != int8 && len_type != int16 && len_type != int32)) {
@@ -155,7 +159,7 @@ inline std::int32_t parse_typed_int(const char * buf, std::size_t buf_len, std::
   return parse_int(buf, buf_len, idx, type_val.type_size);
 }
 
-/// @brief read a type-tagged BCF string (used for ID, REF, and ALT alleles)
+/// @brief read a type-tagged BCF string (missing `.` may be encoded as 0-len `char_` `0x07` or `0x00`)
 inline std::string parse_typed_string(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
   Typed type_val(buf, buf_len, idx);
   if (type_val.type != char_ && !(type_val.type == flag && type_val.n_vals == 0)) {

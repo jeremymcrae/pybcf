@@ -10,12 +10,12 @@ namespace bcf {
 
 namespace {
 
-/// @brief split a 64-bit BGZF virtual offset into intra-block and file offsets
+/// @brief split a 64-bit BGZF virtual offset into intra-block (low 16 bits) and file (high 48 bits) offsets
 Offsets parse_virtual_offset(std::uint64_t v_offset) {
   return {v_offset & 0xffffULL, v_offset >> 16};
 }
 
-/// @brief index of the first CSI octree bin at `level` (0 is root)
+/// @brief index of the first CSI 8-ary tree bin at `level` (`sum_{k=0..level-1} 8^k = (8^level - 1) / 7`)
 std::int64_t first_bin_at_level(std::int32_t level) {
   return ((1LL << (level * 3)) - 1) / 7;
 }
@@ -27,7 +27,7 @@ std::int64_t parent_bin(std::int64_t bin) {
 
 } // namespace
 
-/// @brief load file according to https://samtools.github.io/hts-specs/CSIv1.pdf
+/// @brief load a BGZF-compressed CSIv1 index file (https://samtools.github.io/hts-specs/CSIv1.pdf)
 /// @param path path to CSI index file
 /// @param required whether a missing index file should throw an error
 bool IndexFile::open(const std::string & path, bool required) {
@@ -42,6 +42,7 @@ bool IndexFile::open(const std::string & path, bool required) {
     return false;
   }
 
+  // 1. Validate the 4-byte "CSI\x01" magic header and global binning parameters.
   char magic[4];
   infile.read_exact(magic, 4, "doesn't look like a CSI file");
   if (magic[0] != 'C' || magic[1] != 'S' || magic[2] != 'I' || magic[3] != 1) {
@@ -55,11 +56,13 @@ bool IndexFile::open(const std::string & path, bool required) {
   if (min_shift < 0 || min_shift > 60 || depth < 0 || depth > 19 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
     throw std::invalid_argument("invalid CSI header");
   }
+  // Skip optional auxiliary metadata bytes (`l_aux`), which are not needed for BCF queries.
   if (l_aux > 0) {
     std::vector<char> aux(l_aux);
     infile.read_exact(aux.data(), l_aux, "truncated CSI aux data");
   }
 
+  // 2. Read the per-contig bin maps (`n_ref` contigs in header contig-ID order).
   std::int32_t n_ref = 0;
   infile.read_exact(&n_ref, sizeof(n_ref), "invalid CSI reference count");
   if (n_ref < 0) {
@@ -93,7 +96,7 @@ bool IndexFile::open(const std::string & path, bool required) {
         infile.read_exact(&chunks[k].begin, sizeof(std::uint64_t), "truncated CSI chunk record");
         infile.read_exact(&chunks[k].end, sizeof(std::uint64_t), "truncated CSI chunk record");
       }
-      // Skip htslib's metadata pseudo-bin (bin_limit + 1).
+      // Skip htslib's per-contig summary pseudo-bin (`bin_limit + 1`).
       if (bin_idx < bin_limit) {
         bins[bin_idx] = {loffset, std::move(chunks)};
       }
@@ -104,7 +107,8 @@ bool IndexFile::open(const std::string & path, bool required) {
   return true;
 }
 
-/// @brief calculate the list of bins that may overlap with 0-based region [beg, end)
+/// @brief enumerate every octree bin (from root level 0 down to `depth`) overlapping 0-based `[beg, end)`
+// Each tree level `l` divides `[0, max_coord)` into `8^l` bins of width `2^(min_shift + 3*(depth - l))`.
 std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int64_t end) const {
   std::vector<std::uint32_t> bins;
   std::int64_t limit = max_coord();
@@ -127,7 +131,7 @@ std::vector<std::uint32_t> IndexFile::region_to_bins(std::int64_t beg, std::int6
   return bins;
 }
 
-/// @brief find the virtual file offset for the first chunk overlapping [beg, end)
+/// @brief find the earliest BGZF virtual offset of a chunk that can overlap 0-based `[beg, end)`
 bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const {
   if (end < beg) {
     throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
@@ -142,7 +146,9 @@ bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t en
     return false;
   }
 
-  // Walk from the leaf bin containing `beg` up to the root to find `min_off`.
+  // Walk from the leaf bin containing `beg` up toward the root to find `min_off`:
+  // any chunk ending at or before `min_off` lies strictly upstream of `beg` and can be ignored,
+  // even if it belongs to a wide ancestor bin that spans `[beg, end)`.
   std::uint64_t min_off = 0;
   std::int64_t bin = first_bin_at_level(depth) + (beg >> min_shift);
   for (std::int32_t level = depth; level >= 0; --level) {
@@ -154,6 +160,8 @@ bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t en
     bin = parent_bin(bin);
   }
 
+  // Among all candidate bins overlapping `[beg, end)`, pick the smallest `chunk.begin`
+  // whose `chunk.end` extends past `min_off`.
   std::uint64_t best_offset = UINT64_MAX;
   for (std::uint32_t bin_idx : region_to_bins(beg, end)) {
     auto it = contig_bins.find(bin_idx);

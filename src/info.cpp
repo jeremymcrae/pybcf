@@ -19,7 +19,10 @@ std::vector<NamedInfo> & Info::get_fields() {
   return fields;
 }
 
-/// @brief scan INFO field descriptors without eagerly decoding values
+// Scan the `n_info` key/value pairs in `buf` starting at `info_offset`.
+// Each entry begins with a typed integer dictionary ID followed by a typed value
+// descriptor and `n_vals * type_size` payload bytes. Values themselves are not
+// decoded here — only their offsets and types are recorded.
 void Info::parse() {
   if (is_parsed) {
     return;
@@ -36,6 +39,7 @@ void Info::parse() {
   fields.reserve(n_info);
   std::uint32_t buf_idx = info_offset;
   for (std::uint32_t i = 0; i < n_info; i++) {
+    // Decode the INFO tag's header dictionary index and validate it against the header.
     std::int32_t id_idx = parse_typed_int(raw, buf_len, buf_idx);
     if (id_idx < 0 || static_cast<std::size_t>(id_idx) >= header->info.size() ||
         header->info[id_idx].id.empty()) {
@@ -44,6 +48,7 @@ void Info::parse() {
     std::uint32_t uid = static_cast<std::uint32_t>(id_idx);
     const InfoField * field = &header->info[uid];
 
+    // Read the value's type/length descriptor and ensure its payload fits within `buf`.
     Typed type_val(raw, buf_len, buf_idx);
     std::uint64_t field_bytes = static_cast<std::uint64_t>(type_val.n_vals) * type_val.type_size;
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
@@ -54,14 +59,16 @@ void Info::parse() {
       throw std::invalid_argument("invalid BCF INFO flag length");
     }
 
-    // Record each INFO field's byte offset and shape now; decode actual values only when accessed.
+    // Combine the header's `Number`/`Type` metadata with the record's element count:
+    // list fields (`Number` != 0, 1) always decode as Python tuples even when `n_vals <= 1`.
     InfoKind kind;
     if (field->is_flag) {
       kind = info_flag;
     } else if (type_val.n_vals == 0) {
-      // Zero-length non-flag values represent empty tuples for list fields or None for scalars.
+      // Zero-length non-flag values represent empty tuples `()` for list fields or `None` for scalars.
       kind = field->is_list ? info_vector_int : info_missing;
     } else if (type_val.type == char_) {
+      // BCF encodes string lists as a single comma-separated `char_` string.
       kind = field->is_list ? info_vector_string : info_string;
     } else if (type_val.type == float_) {
       kind = ((type_val.n_vals > 1) || field->is_list) ? info_vector_float : info_scalar_float;
@@ -88,6 +95,7 @@ void Info::parse() {
   is_parsed = true;
 }
 
+// Look up an INFO field by name without allocating a temporary std::string.
 bool Info::get_type(const char * key, std::size_t key_len, InfoType & out) {
   parse();
   for (const auto & entry : fields) {
@@ -105,6 +113,7 @@ std::int32_t Info::get_int(const InfoType & type) const {
   return parse_int(buf.get(), buf_len, idx, type.type_size);
 }
 
+// Return raw IEEE-754 bits so Python can distinguish BCF_FLOAT_MISSING (`None`) from literal `NaN`.
 std::uint32_t Info::get_float_bits(const InfoType & type) const {
   std::uint32_t idx = type.offset;
   std::uint32_t bits = parse_raw_float(buf.get(), buf_len, idx);
@@ -116,6 +125,7 @@ std::string Info::get_string(const InfoType & type) const {
   return parse_string(buf.get(), buf_len, idx, type.n_vals);
 }
 
+// Read an integer INFO vector, stopping early if an END_OF_VECTOR (`INT32_MIN + 1`) padding sentinel is hit.
 std::vector<std::int32_t> Info::get_ints(const InfoType & type) const {
   std::vector<std::int32_t> vals;
   vals.reserve(type.n_vals);
@@ -131,6 +141,7 @@ std::vector<std::int32_t> Info::get_ints(const InfoType & type) const {
   return vals;
 }
 
+// Read a float INFO vector as raw 32-bit words, stopping early at `BCF_FLOAT_VECTOR_END`.
 std::vector<std::uint32_t> Info::get_floats_bits(const InfoType & type) const {
   std::vector<std::uint32_t> vals;
   vals.reserve(type.n_vals);

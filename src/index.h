@@ -9,26 +9,30 @@
 
 namespace bcf {
 
-/// stores the file offset for a bgzf chunk containing the start of a bin, and
-/// also the offset where the bin begins within the uncompressed chunk
+// Decoded BGZF virtual offset: `c_offset` is the byte offset of a compressed BGZF
+// block in the BCF file, and `u_offset` is the byte offset inside that uncompressed block.
 struct Offsets {
   std::uint64_t u_offset; // uncompressed offset (within bgzf chunk)
   std::uint64_t c_offset; // compressed offset (within overall file)
 };
 
+// Half-open BGZF virtual-offset span `[begin, end)` of records belonging to a CSI bin.
 struct Chunk {
   std::uint64_t begin;
   std::uint64_t end;
 };
 
+// One CSI octree bin: `loffset` is the virtual offset of the earliest record overlapping
+// the bin's subtree (used to prune upstream chunks), followed by its BGZF chunk list.
 struct Bin {
   std::uint64_t loffset;
   std::vector<Chunk> chunks;
 };
 
+// Reader and region-query engine for CSIv1 coordinate-sorted index files.
 class IndexFile {
-  std::int32_t min_shift = 0;
-  std::int32_t depth = 0;
+  std::int32_t min_shift = 0; // log2 width (in bp) of leaf-level bins (typically 14 -> 16 kb)
+  std::int32_t depth = 0;     // octree depth (0 = root only; typically 5)
   std::vector<std::unordered_map<std::uint32_t, Bin>> indices;
 
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }

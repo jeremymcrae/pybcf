@@ -15,6 +15,8 @@ namespace bcf {
 
 namespace {
 
+// 64 KB matches the uncompressed size of a single BGZF block, amortizing `gzread` calls
+// across many small 32-byte variant headers and site payloads.
 const std::size_t BUFFER_SIZE = 65536;
 
 int open_readonly(const char * filepath) {
@@ -72,6 +74,8 @@ void GzReader::check_error(int status) {
   }
 }
 
+// Serve small reads out of `buffer` with `memcpy`, while reading large payloads
+// (`>= BUFFER_SIZE`, such as multi-thousand-sample blocks) straight into `dst`.
 std::size_t GzReader::read(void * dst, std::size_t count) {
   if (file == nullptr) {
     throw std::invalid_argument("cannot read from closed file: " + path);
@@ -118,6 +122,7 @@ void GzReader::read_exact(void * dst, std::size_t count, const char * err_msg) {
   }
 }
 
+// Advance past `count` uncompressed bytes without allocating or copying into a caller buffer.
 void GzReader::skip(std::size_t count, const char * err_msg) {
   if (file == nullptr) {
     throw std::invalid_argument("cannot read from closed file: " + path);
@@ -141,6 +146,10 @@ void GzReader::skip(std::size_t count, const char * err_msg) {
   }
 }
 
+// BGZF files are concatenations of independent gzip members:
+// 1. Seek the underlying OS file descriptor directly to the compressed block start (`c_offset`).
+// 2. Wrap that positioned descriptor in a fresh `gzFile` via `gzdopen` (which takes ownership of `fd`).
+// 3. Advance `u_offset` uncompressed bytes inside that BGZF block to reach the target record.
 void GzReader::seek(Offsets offset) {
   close();
 

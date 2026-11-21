@@ -53,7 +53,8 @@ bool IndexFile::open(const std::string & path, bool required) {
   infile.read_exact(&depth, sizeof(depth), "invalid CSI header");
   infile.read_exact(&l_aux, sizeof(l_aux), "invalid CSI header");
   // CSI stores bin numbers as uint32, which caps the tree at depth 10.
-  if (min_shift < 0 || min_shift > 60 || depth < 0 || depth > 10 || (min_shift + depth * 3) >= 62 || l_aux < 0) {
+  if (min_shift < 0 || min_shift > 60 || depth < 0 || depth > 10 ||
+      (min_shift + depth * 3) >= 62 || l_aux < 0) {
     throw std::invalid_argument("invalid CSI header");
   }
   // Skip optional auxiliary metadata bytes (`l_aux`), which are not needed for BCF queries.

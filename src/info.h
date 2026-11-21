@@ -26,8 +26,8 @@ enum InfoKind : std::int8_t {
 };
 
 // Byte location and decoded shape of one INFO field's payload inside `Info::buf`.
-struct InfoType {
-  InfoKind type;
+struct InfoLayout {
+  InfoKind kind;
   std::uint8_t type_size;  // element byte width (1, 2, or 4; 0 for zero-length flag)
   std::uint32_t offset;    // byte offset of the value payload inside `buf`
   std::uint32_t n_vals;    // number of elements encoded in the payload
@@ -37,7 +37,7 @@ struct InfoType {
 struct NamedInfo {
   std::uint32_t id_idx;
   const InfoField * field;
-  InfoType info;
+  InfoLayout layout;
 };
 
 // Owns a variant's shared record buffer (starting at `info_offset`) and lazily
@@ -64,14 +64,14 @@ public:
 
   std::size_t size();
   std::vector<NamedInfo> & get_fields();
-  bool get_type(const char * key, std::size_t key_len, InfoType & out);
+  bool find(const char * key, std::size_t key_len, InfoLayout & out);
 
-  std::int32_t get_int(const InfoType & type) const;
-  std::uint32_t get_float_bits(const InfoType & type) const;
-  std::string get_string(const InfoType & type) const;
+  std::int32_t get_int(const InfoLayout & layout) const;
+  std::uint32_t get_float_bits(const InfoLayout & layout) const;
+  std::string get_string(const InfoLayout & layout) const;
 
-  std::vector<std::int32_t> get_ints(const InfoType & type) const;
-  std::vector<std::uint32_t> get_floats_bits(const InfoType & type) const;
+  std::vector<std::int32_t> get_ints(const InfoLayout & layout) const;
+  std::vector<std::uint32_t> get_floats_bits(const InfoLayout & layout) const;
 };
 
 } // namespace bcf

@@ -18,7 +18,7 @@ class BCF {
   std::int32_t query_contig_id = -1; // -1 means full-file scan; >= 0 restricts to one contig
   std::int32_t query_start = 0;      // 1-based inclusive start coordinate
   std::int32_t query_end = INT32_MAX; // 1-based inclusive end coordinate
-  bool empty_region = false;         // true once EOF or end of the active region is reached
+  bool exhausted = false;            // true once EOF or end of the active region is reached
 public:
   BCF(const std::string & path, const std::string & index_path = "");
   bool nextvar(Variant & var);

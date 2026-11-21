@@ -30,7 +30,8 @@ BCF::BCF(const std::string & path, const std::string & index_path) {
   }
   header = Header(text);
 
-  // Load `<path>.csi` opportunistically if present; fail immediately if a user-supplied `index_path` is missing.
+  // Load `<path>.csi` opportunistically if present, but fail immediately if a
+  // user-supplied `index_path` is missing.
   bool explicit_index = !index_path.empty();
   std::string csi_path = explicit_index ? index_path : (path + ".csi");
   idxfile.open(csi_path, explicit_index);
@@ -38,13 +39,13 @@ BCF::BCF(const std::string & path, const std::string & index_path) {
 
 // Read the next variant matching the current stream/region state, returning false at EOF or end of region.
 bool BCF::nextvar(Variant & var) {
-  if (empty_region) {
+  if (exhausted) {
     return false;
   }
   if (var.read(infile, header, query_contig_id, query_start, query_end)) {
     return true;
   }
-  empty_region = true;
+  exhausted = true;
   return false;
 }
 
@@ -69,13 +70,14 @@ void BCF::set_region(const std::string & chrom, std::int32_t start, std::int32_t
   query_start = start;
   query_end = end;
 
-  // CSI bins use 0-based half-open `[beg, end)` coordinates, so convert 1-based `start` to `max(0, start - 1)`.
+  // CSI bins use 0-based half-open `[beg, end)` coordinates, so convert 1-based `start`
+  // to `max(0, start - 1)`.
   Offsets offset;
   if (idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end, offset)) {
     infile.seek(offset);
-    empty_region = false;
+    exhausted = false;
   } else {
-    empty_region = true;
+    exhausted = true;
   }
 }
 

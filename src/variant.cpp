@@ -75,8 +75,9 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
     // allocating or decoding the record payload:
     // - Because records are sorted by (contig, pos), moving onto another contig or past
     //   `query_end` means no later record can overlap the region.
-    // - A CSI seek lands at the start of a BGZF block that may begin upstream of `query_start`;
-    //   skip records whose reference span `[rec_pos, rec_pos + rlen - 1]` ends before `query_start`.
+    // - A CSI seek lands on the first record of the earliest candidate chunk, which can start
+    //   upstream of `query_start`; skip records whose reference span
+    //   `[rec_pos, rec_pos + rlen - 1]` ends before `query_start`.
     if (query_contig_id >= 0 && hdr.chrom_id != query_contig_id) {
       return false;
     }

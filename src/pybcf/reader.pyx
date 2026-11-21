@@ -56,28 +56,28 @@ cdef extern from 'info.h' namespace 'bcf':
         info_vector_int
         info_vector_string
 
-    cdef struct InfoType:
-        InfoKind type
+    cdef struct InfoLayout:
+        InfoKind kind
         uint8_t type_size
         uint32_t offset
         uint32_t n_vals
 
     cdef struct NamedInfo:
         uint32_t id_idx
-        InfoType info
+        InfoLayout layout
 
     cdef cppclass Info:
         size_t size() except +
         vector[NamedInfo] & get_fields() except +
-        bool get_type(const char *, size_t, InfoType &) except +
-        int32_t get_int(const InfoType &) except +
-        uint32_t get_float_bits(const InfoType &) except +
-        string get_string(const InfoType &) except +
-        vector[int32_t] get_ints(const InfoType &) except +
-        vector[uint32_t] get_floats_bits(const InfoType &) except +
+        bool find(const char *, size_t, InfoLayout &) except +
+        int32_t get_int(const InfoLayout &) except +
+        uint32_t get_float_bits(const InfoLayout &) except +
+        string get_string(const InfoLayout &) except +
+        vector[int32_t] get_ints(const InfoLayout &) except +
+        vector[uint32_t] get_floats_bits(const InfoLayout &) except +
 
 cdef extern from 'sample_data.h' namespace 'bcf':
-    cdef struct FormatType:
+    cdef struct FormatLayout:
         Types data_type
         uint8_t type_size
         uint32_t offset
@@ -86,16 +86,16 @@ cdef extern from 'sample_data.h' namespace 'bcf':
 
     cdef struct NamedFormat:
         uint32_t id_idx
-        FormatType format
+        FormatLayout layout
 
     cdef cppclass SampleData:
         size_t size() except +
         vector[NamedFormat] & get_fields() except +
-        bool get_type(const char *, size_t, FormatType &) except +
-        void read_ints(const FormatType &, double *) except +
-        void read_floats(const FormatType &, float *) except +
-        void read_phase(const FormatType &, uint8_t *) except +
-        vector[string] get_strings(const FormatType &) except +
+        bool find(const char *, size_t, FormatLayout &) except +
+        void read_ints(const FormatLayout &, double *) except +
+        void read_floats(const FormatLayout &, float *) except +
+        void read_phase(const FormatLayout &, uint8_t *) except +
+        vector[string] get_strings(const FormatLayout &) except +
         uint32_t n_samples
 
 cdef extern from 'variant.h' namespace 'bcf':
@@ -178,31 +178,31 @@ cdef class BcfInfo:
 
     # Borrow Python's internal UTF-8 buffer directly via `PyUnicode_AsUTF8AndSize`
     # so key lookups do not allocate a temporary `bytes` or `std::string`.
-    cdef inline bool _get_type(self, key, InfoType & info_type):
+    cdef inline bool _find(self, key, InfoLayout & layout):
         if not isinstance(key, str):
             return False
         cdef Py_ssize_t n = 0
         cdef const char * s = PyUnicode_AsUTF8AndSize(key, &n)
-        return self.thisptr.get_type(s, <size_t>n, info_type)
+        return self.thisptr.find(s, <size_t>n, layout)
 
     def __len__(self):
         return self.thisptr.size()
 
     def __contains__(self, key):
         ''' check if key in Info '''
-        cdef InfoType info_type
-        return self._get_type(key, info_type)
+        cdef InfoLayout layout
+        return self._find(key, layout)
 
     def keys(self):
         cdef tuple ids = self._variant._reader._get_info_ids()
         return [ids[x.id_idx] for x in self.thisptr.get_fields()]
 
     def values(self):
-        return [self._decode_value(x.info) for x in self.thisptr.get_fields()]
+        return [self._decode_value(x.layout) for x in self.thisptr.get_fields()]
 
     def items(self):
         cdef tuple ids = self._variant._reader._get_info_ids()
-        return [(ids[x.id_idx], self._decode_value(x.info)) for x in self.thisptr.get_fields()]
+        return [(ids[x.id_idx], self._decode_value(x.layout)) for x in self.thisptr.get_fields()]
 
     def __iter__(self):
         ''' get the info keys for a variant
@@ -211,8 +211,8 @@ cdef class BcfInfo:
 
     # Convert a single indexed INFO field from raw BCF bytes into its Python type
     # (`bool`, `int`, `float`, `str`, `None`, or a `tuple` for `Number != 1` fields).
-    cdef _decode_value(self, InfoType info_type):
-        cdef InfoKind datatype = info_type.type
+    cdef _decode_value(self, InfoLayout layout):
+        cdef InfoKind datatype = layout.kind
         cdef int32_t i_val
 
         if datatype == info_missing:
@@ -220,30 +220,30 @@ cdef class BcfInfo:
         elif datatype == info_flag:
             return True
         elif datatype == info_scalar_float:
-            return _decode_float(self.thisptr.get_float_bits(info_type))
+            return _decode_float(self.thisptr.get_float_bits(layout))
         elif datatype == info_scalar_int:
-            i_val = self.thisptr.get_int(info_type)
+            i_val = self.thisptr.get_int(layout)
             return None if i_val == INT32_MIN else i_val
         elif datatype == info_string:
-            return self.thisptr.get_string(info_type).decode('utf8')
+            return self.thisptr.get_string(layout).decode('utf8')
         elif datatype == info_vector_string:
-            return tuple(self.thisptr.get_string(info_type).decode('utf8').split(','))
+            return tuple(self.thisptr.get_string(layout).decode('utf8').split(','))
         elif datatype == info_vector_float:
-            return tuple([_decode_float(x) for x in self.thisptr.get_floats_bits(info_type)])
+            return tuple([_decode_float(x) for x in self.thisptr.get_floats_bits(layout)])
         elif datatype == info_vector_int:
-            return tuple([None if x == INT32_MIN else x for x in self.thisptr.get_ints(info_type)])
+            return tuple([None if x == INT32_MIN else x for x in self.thisptr.get_ints(layout)])
 
     def get(self, key, default=None):
-        cdef InfoType info_type
-        if not self._get_type(key, info_type):
+        cdef InfoLayout layout
+        if not self._find(key, layout):
             return default
-        return self._decode_value(info_type)
+        return self._decode_value(layout)
 
     def __getitem__(self, _key):
-        cdef InfoType info_type
-        if not self._get_type(_key, info_type):
+        cdef InfoLayout layout
+        if not self._find(_key, layout):
             raise KeyError(f'unknown INFO field: {_key}')
-        return self._decode_value(info_type)
+        return self._decode_value(layout)
 
 # Mapping-like view over `Variant.sample_data`; decodes requested FORMAT fields
 # directly into NumPy arrays (or lists of string tuples for `char_` fields).
@@ -259,31 +259,31 @@ cdef class BcfSampleData:
         self.thisptr = data
         self._variant = variant
 
-    cdef inline bool _get_type(self, key, FormatType & fmt_type):
+    cdef inline bool _find(self, key, FormatLayout & layout):
         if not isinstance(key, str):
             return False
         cdef Py_ssize_t n = 0
         cdef const char * s = PyUnicode_AsUTF8AndSize(key, &n)
-        return self.thisptr.get_type(s, <size_t>n, fmt_type)
+        return self.thisptr.find(s, <size_t>n, layout)
 
     def __len__(self):
         return self.thisptr.size()
 
     def __contains__(self, key):
         ''' check if key in SampleData '''
-        cdef FormatType fmt_type
-        return self._get_type(key, fmt_type)
+        cdef FormatLayout layout
+        return self._find(key, layout)
 
     def keys(self):
         cdef tuple ids = self._variant._reader._get_format_ids()
         return [ids[x.id_idx] for x in self.thisptr.get_fields()]
 
     def values(self):
-        return [self._decode_value(x.format) for x in self.thisptr.get_fields()]
+        return [self._decode_value(x.layout) for x in self.thisptr.get_fields()]
 
     def items(self):
         cdef tuple ids = self._variant._reader._get_format_ids()
-        return [(ids[x.id_idx], self._decode_value(x.format)) for x in self.thisptr.get_fields()]
+        return [(ids[x.id_idx], self._decode_value(x.layout)) for x in self.thisptr.get_fields()]
 
     def __iter__(self):
         ''' get the format keys for a variant
@@ -293,8 +293,8 @@ cdef class BcfSampleData:
     # Allocate an uninitialized C-contiguous 1D NumPy array, take its raw pointer via a
     # Cython typed memoryview (`&i_arr[0]` / `&f_arr[0]`), let C++ SIMD write straight
     # into it without an intermediate `std::vector`, and reshape to `(n_samples, n_vals)` if needed.
-    cdef _decode_value(self, FormatType fmt_type):
-        cdef uint32_t n_per_sample = fmt_type.n_vals
+    cdef _decode_value(self, FormatLayout layout):
+        cdef uint32_t n_per_sample = layout.n_vals
         cdef uint32_t n_samples = self.thisptr.n_samples
         cdef uint64_t n_vals = <uint64_t>n_per_sample * <uint64_t>n_samples
         cdef tuple shape
@@ -306,36 +306,36 @@ cdef class BcfSampleData:
         cdef float[::1] f_arr
 
         # Untyped (`flag`) FORMAT fields always have zero values, so they share the empty-int path.
-        if fmt_type.data_type in (flag, int8, int16, int32):
+        if layout.data_type in (flag, int8, int16, int32):
             if n_vals == 0:
                 return np.full(shape, np.nan, dtype=np.float64)
             raw_arr = np.empty(n_vals, dtype=np.float64, order='C')
             i_arr = raw_arr
-            self.thisptr.read_ints(fmt_type, &i_arr[0])
+            self.thisptr.read_ints(layout, &i_arr[0])
             return raw_arr.reshape(shape) if n_per_sample > 1 else raw_arr
-        elif fmt_type.data_type == float_:
+        elif layout.data_type == float_:
             if n_vals == 0:
                 return np.full(shape, np.nan, dtype=np.float32)
             raw_arr = np.empty(n_vals, dtype=np.float32, order='C')
             f_arr = raw_arr
-            self.thisptr.read_floats(fmt_type, &f_arr[0])
+            self.thisptr.read_floats(layout, &f_arr[0])
             return raw_arr.reshape(shape) if n_per_sample > 1 else raw_arr
-        elif fmt_type.data_type == char_:
-            return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(fmt_type)]
+        elif layout.data_type == char_:
+            return [tuple(x.decode('utf8').split(',')) for x in self.thisptr.get_strings(layout)]
 
-        raise ValueError(f'unknown datatype: {<int>fmt_type.data_type}')
+        raise ValueError(f'unknown datatype: {<int>layout.data_type}')
 
     def get(self, key, default=None):
-        cdef FormatType fmt_type
-        if not self._get_type(key, fmt_type):
+        cdef FormatLayout layout
+        if not self._find(key, layout):
             return default
-        return self._decode_value(fmt_type)
+        return self._decode_value(layout)
 
     def __getitem__(self, _key):
-        cdef FormatType fmt_type
-        if not self._get_type(_key, fmt_type):
+        cdef FormatLayout layout
+        if not self._find(_key, layout):
             raise KeyError(f'unknown FORMAT field: {_key}')
-        return self._decode_value(fmt_type)
+        return self._decode_value(layout)
 
     # Decode GT phasing lazily into a `uint8` array of `0`/`1` bytes and reinterpret
     # the buffer in place as a zero-copy `bool` NumPy array (`raw_arr.view(np.bool_)`).
@@ -344,12 +344,12 @@ cdef class BcfSampleData:
         ''' whether genotypes are phased '''
         if self.thisptr.n_samples == 0:
             return np.empty(0, dtype=np.bool_)
-        cdef FormatType fmt_type
-        if not self.thisptr.get_type(b'GT', 2, fmt_type):
+        cdef FormatLayout layout
+        if not self.thisptr.find(b'GT', 2, layout):
             return np.empty(0, dtype=np.bool_)
         raw_arr = np.empty(self.thisptr.n_samples, dtype=np.uint8, order='C')
         cdef uint8_t[::1] p_arr = raw_arr
-        self.thisptr.read_phase(fmt_type, &p_arr[0])
+        self.thisptr.read_phase(layout, &p_arr[0])
         return raw_arr.view(np.bool_)
 
 # Owns a C++ `Variant` value inline (`thisptr`) and resolves integer dictionary IDs

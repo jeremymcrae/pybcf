@@ -14,7 +14,7 @@
 namespace bcf {
 
 // Byte location and layout of one FORMAT field inside a variant's sample buffer.
-struct FormatType {
+struct FormatLayout {
   Types data_type;         // BCF atomic type (int8/int16/int32/float_/char_)
   std::uint8_t type_size;  // byte width of a single element (1, 2, or 4)
   std::uint32_t offset;    // start byte offset of sample 0's values in `buf`
@@ -26,7 +26,7 @@ struct FormatType {
 struct NamedFormat {
   std::uint32_t id_idx;
   const FormatField * field;
-  FormatType format;
+  FormatLayout layout;
 };
 
 // Holds the raw per-sample ("individual") byte block of a BCF record and decodes
@@ -41,19 +41,20 @@ class SampleData {
 
   void parse();
 public:
-  SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t n_samples);
+  SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt,
+             std::uint32_t n_samples);
   SampleData() = default;
   SampleData(SampleData &&) = default;
   SampleData & operator=(SampleData &&) = default;
 
   std::size_t size();
   std::vector<NamedFormat> & get_fields();
-  bool get_type(const char * key, std::size_t key_len, FormatType & out);
+  bool find(const char * key, std::size_t key_len, FormatLayout & out);
 
-  void read_ints(const FormatType & type, double * dst) const;
-  void read_floats(const FormatType & type, float * dst) const;
-  void read_phase(const FormatType & type, std::uint8_t * dst) const;
-  std::vector<std::string> get_strings(const FormatType & type) const;
+  void read_ints(const FormatLayout & layout, double * dst) const;
+  void read_floats(const FormatLayout & layout, float * dst) const;
+  void read_phase(const FormatLayout & layout, std::uint8_t * dst) const;
+  std::vector<std::string> get_strings(const FormatLayout & layout) const;
 
   std::uint32_t n_samples = 0;
 };

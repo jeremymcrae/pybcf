@@ -42,7 +42,7 @@ std::uint32_t parse_idx(const std::string & s) {
 }
 
 /// @brief parse `<Key=Value,...>` attributes from a `##INFO`/`##FORMAT`/`##FILTER`/`##contig` line
-// Tracks `"` quotes and `\` escapes so commas inside `Description="..."` do not split fields.
+/// Tracks `"` quotes and `\` escapes so commas inside `Description="..."` do not split fields.
 std::unordered_map<std::string, std::string> parse_delimited(std::string text) {
   text = trim(trim(text, " \t\r"), "<>");
   std::unordered_map<std::string, std::string> data;

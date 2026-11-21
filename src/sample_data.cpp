@@ -17,7 +17,8 @@ namespace bcf {
 
 // Read the raw per-sample byte block from the BCF stream into an uninitialized buffer.
 // Field descriptors and sample values are only parsed later if `samples` is accessed.
-SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len, std::uint32_t _n_fmt, std::uint32_t _n_samples)
+SampleData::SampleData(GzReader & infile, const Header & _header, std::uint32_t len,
+                       std::uint32_t _n_fmt, std::uint32_t _n_samples)
     : header(&_header), n_fmt(_n_fmt), buf_len(len), n_samples(_n_samples) {
   if (len > 0) {
     buf.reset(new char[len]);
@@ -72,7 +73,8 @@ void SampleData::parse() {
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
-    fields.push_back({uid, fmt_field, {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno}});
+    FormatLayout layout = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
+    fields.push_back({uid, fmt_field, layout});
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
   is_parsed = true;
@@ -90,12 +92,12 @@ std::vector<NamedFormat> & SampleData::get_fields() {
 
 // Look up a FORMAT field by name without allocating a temporary std::string. If a malformed
 // record repeats a key, the first copy wins, matching htslib.
-bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & out) {
+bool SampleData::find(const char * key, std::size_t key_len, FormatLayout & out) {
   parse();
   for (const auto & entry : fields) {
     const std::string & id = entry.field->id;
     if (id.size() == key_len && std::memcmp(id.data(), key, key_len) == 0) {
-      out = entry.format;
+      out = entry.layout;
       return true;
     }
   }
@@ -265,7 +267,8 @@ static inline bool simd_supported() {
 
 // Widen 4 signed int32s to two pairs of float64s and replace BCF missing/reserved
 // sentinels (<= `miss_thresh`) with quiet NaN.
-static inline void store_s32_as_double(int32x4_t vals, double * dst, float64x2_t miss_thresh, float64x2_t qnan) {
+static inline void store_s32_as_double(int32x4_t vals, double * dst, float64x2_t miss_thresh,
+                                       float64x2_t qnan) {
   float64x2_t d_lo = vcvtq_f64_s64(vmovl_s32(vget_low_s32(vals)));
   float64x2_t d_hi = vcvtq_f64_s64(vmovl_s32(vget_high_s32(vals)));
   vst1q_f64(dst, vbslq_f64(vcleq_f64(d_lo, miss_thresh), qnan, d_lo));
@@ -273,7 +276,8 @@ static inline void store_s32_as_double(int32x4_t vals, double * dst, float64x2_t
 }
 
 // Widen 16 int8s -> two 8-lane int16 vectors -> four 4-lane int32 vectors -> float64.
-static inline void store_s8_as_double(int8x16_t data, double * dst, float64x2_t miss_thresh, float64x2_t qnan) {
+static inline void store_s8_as_double(int8x16_t data, double * dst, float64x2_t miss_thresh,
+                                      float64x2_t qnan) {
   int16x8_t wider = vmovl_s8(vget_low_s8(data));
   store_s32_as_double(vmovl_s16(vget_low_s16(wider)), dst, miss_thresh, qnan);
   store_s32_as_double(vmovl_s16(vget_high_s16(wider)), dst + 4, miss_thresh, qnan);
@@ -363,25 +367,25 @@ static std::uint64_t simd_floats(const char * src, float * dst, std::uint64_t ma
 
 // Decode an integer FORMAT field (including GT) into `dst` as float64, so missing and
 // padding values can be NaN. GT alleles become 0-based allele indices.
-void SampleData::read_ints(const FormatType & type, double * dst) const {
-  std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
+void SampleData::read_ints(const FormatLayout & layout, double * dst) const {
+  std::uint64_t max_n = static_cast<std::uint64_t>(layout.n_vals) * n_samples;
   if (max_n == 0) {
     return;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf_len) {
+  if (static_cast<std::uint64_t>(layout.offset) + max_n * layout.type_size > buf_len) {
     throw std::invalid_argument("FORMAT integer data exceeds buffer");
   }
   std::uint64_t n = 0;
 
 #ifdef BCF_HAVE_SIMD
   if (simd_supported()) {
-    const char * src = buf.get() + type.offset;
-    if (type.is_geno) {
+    const char * src = buf.get() + layout.offset;
+    if (layout.is_geno) {
       // Only 8-bit GT (fewer than 63 ALT alleles) has a SIMD kernel.
-      n = (type.type_size == 1) ? simd_geno(src, dst, max_n) : 0;
-    } else if (type.type_size == 1) {
+      n = (layout.type_size == 1) ? simd_geno(src, dst, max_n) : 0;
+    } else if (layout.type_size == 1) {
       n = simd_int8(src, dst, max_n);
-    } else if (type.type_size == 2) {
+    } else if (layout.type_size == 2) {
       n = simd_int16(src, dst, max_n);
     } else {
       n = simd_int32(src, dst, max_n);
@@ -389,11 +393,11 @@ void SampleData::read_ints(const FormatType & type, double * dst) const {
   }
 #endif
 
-  std::uint32_t offset = type.offset + static_cast<std::uint32_t>(n * type.type_size);
+  std::uint32_t offset = layout.offset + static_cast<std::uint32_t>(n * layout.type_size);
   const double qnan = std::nan("");
   for (; n < max_n; n++) {
-    std::int32_t v = parse_int(buf.get(), buf_len, offset, type.type_size);
-    if (type.is_geno) {
+    std::int32_t v = parse_int(buf.get(), buf_len, offset, layout.type_size);
+    if (layout.is_geno) {
       v = (v < 0) ? -1 : (v >> 1) - 1;
       dst[n] = (v < 0) ? qnan : static_cast<double>(v);
     } else {
@@ -405,34 +409,34 @@ void SampleData::read_ints(const FormatType & type, double * dst) const {
 // Compute per-sample phasing flags (0 = unphased, 1 = phased) from GT without decoding
 // allele numbers. Uses a SIMD fast path for standard diploid 8-bit GT and a general
 // scalar loop for haploid, polyploid, 16/32-bit GT, and tail samples.
-void SampleData::read_phase(const FormatType & type, std::uint8_t * dst) const {
+void SampleData::read_phase(const FormatLayout & layout, std::uint8_t * dst) const {
   if (n_samples == 0) {
     return;
   }
-  if (type.n_vals == 0) {
+  if (layout.n_vals == 0) {
     std::memset(dst, 0, n_samples);
     return;
   }
-  std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
-  if (static_cast<std::uint64_t>(type.offset) + max_n * type.type_size > buf_len) {
+  std::uint64_t max_n = static_cast<std::uint64_t>(layout.n_vals) * n_samples;
+  if (static_cast<std::uint64_t>(layout.offset) + max_n * layout.type_size > buf_len) {
     throw std::invalid_argument("FORMAT GT data exceeds buffer");
   }
   const char * raw = buf.get();
   std::uint32_t s = 0;
 
 #ifdef BCF_HAVE_SIMD
-  if (simd_supported() && type.n_vals == 2 && type.type_size == 1) {
-    s = simd_phase(raw + type.offset, dst, n_samples);
+  if (simd_supported() && layout.n_vals == 2 && layout.type_size == 1) {
+    s = simd_phase(raw + layout.offset, dst, n_samples);
   }
 #endif
 
   // In BCF, allele 0 carries no phase relative to a prior allele; a sample is phased if
   // every non-padding allele after the first (`i > 0`, `v >= 0`) has its low phase bit set.
-  std::uint32_t offset = type.offset + s * type.n_vals * type.type_size;
+  std::uint32_t offset = layout.offset + s * layout.n_vals * layout.type_size;
   for (; s < n_samples; s++) {
     std::uint8_t is_phased = 1;
-    for (std::uint32_t i = 0; i < type.n_vals; i++) {
-      std::int32_t v = parse_int(raw, buf_len, offset, type.type_size);
+    for (std::uint32_t i = 0; i < layout.n_vals; i++) {
+      std::int32_t v = parse_int(raw, buf_len, offset, layout.type_size);
       if (v >= 0 && i > 0) {
         is_phased &= static_cast<std::uint8_t>(v & 1);
       }
@@ -443,15 +447,15 @@ void SampleData::read_phase(const FormatType & type, std::uint8_t * dst) const {
 
 // Decode 32-bit IEEE float FORMAT values into `dst`, replacing BCF's signaling-NaN
 // missing/padding sentinels (`0x7f800001..0x7f800007`) with quiet NaN.
-void SampleData::read_floats(const FormatType & type, float * dst) const {
-  std::uint64_t max_n = static_cast<std::uint64_t>(type.n_vals) * n_samples;
+void SampleData::read_floats(const FormatLayout & layout, float * dst) const {
+  std::uint64_t max_n = static_cast<std::uint64_t>(layout.n_vals) * n_samples;
   if (max_n == 0) {
     return;
   }
-  if (static_cast<std::uint64_t>(type.offset) + max_n * sizeof(float) > buf_len) {
+  if (static_cast<std::uint64_t>(layout.offset) + max_n * sizeof(float) > buf_len) {
     throw std::invalid_argument("FORMAT float data exceeds buffer");
   }
-  const char * src = buf.get() + type.offset;
+  const char * src = buf.get() + layout.offset;
   std::uint64_t n = 0;
 
 #ifdef BCF_HAVE_SIMD
@@ -474,14 +478,14 @@ void SampleData::read_floats(const FormatType & type, float * dst) const {
 
 // Extract per-sample strings: BCF stores FORMAT strings as fixed `n_vals`-byte slices
 // per sample, padded with NUL ('\0') bytes for shorter or missing strings.
-std::vector<std::string> SampleData::get_strings(const FormatType & type) const {
+std::vector<std::string> SampleData::get_strings(const FormatLayout & layout) const {
   std::vector<std::string> vals(n_samples);
-  if (n_samples == 0 || type.n_vals == 0) {
+  if (n_samples == 0 || layout.n_vals == 0) {
     return vals;
   }
-  std::uint32_t offset = type.offset;
+  std::uint32_t offset = layout.offset;
   for (std::uint32_t n = 0; n < n_samples; n++) {
-    vals[n] = parse_string(buf.get(), buf_len, offset, type.n_vals);
+    vals[n] = parse_string(buf.get(), buf_len, offset, layout.n_vals);
   }
   return vals;
 }

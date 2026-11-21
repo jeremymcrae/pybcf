@@ -83,43 +83,43 @@ void Info::parse() {
 
 // Look up an INFO field by name without allocating a temporary std::string. If a malformed
 // record repeats a key, the first copy wins, matching htslib.
-bool Info::get_type(const char * key, std::size_t key_len, InfoType & out) {
+bool Info::find(const char * key, std::size_t key_len, InfoLayout & out) {
   parse();
   for (const auto & entry : fields) {
     const std::string & id = entry.field->id;
     if (id.size() == key_len && std::memcmp(id.data(), key, key_len) == 0) {
-      out = entry.info;
+      out = entry.layout;
       return true;
     }
   }
   return false;
 }
 
-std::int32_t Info::get_int(const InfoType & type) const {
-  std::uint32_t idx = type.offset;
-  return parse_int(buf.get(), buf_len, idx, type.type_size);
+std::int32_t Info::get_int(const InfoLayout & layout) const {
+  std::uint32_t idx = layout.offset;
+  return parse_int(buf.get(), buf_len, idx, layout.type_size);
 }
 
 // Return raw IEEE-754 bits so Python can distinguish BCF_FLOAT_MISSING (`None`) from literal `NaN`.
-std::uint32_t Info::get_float_bits(const InfoType & type) const {
-  std::uint32_t idx = type.offset;
+std::uint32_t Info::get_float_bits(const InfoLayout & layout) const {
+  std::uint32_t idx = layout.offset;
   std::uint32_t bits = parse_raw_float(buf.get(), buf_len, idx);
   return (bits == BCF_FLOAT_VECTOR_END) ? BCF_FLOAT_MISSING : bits;
 }
 
-std::string Info::get_string(const InfoType & type) const {
-  std::uint32_t idx = type.offset;
-  return parse_string(buf.get(), buf_len, idx, type.n_vals);
+std::string Info::get_string(const InfoLayout & layout) const {
+  std::uint32_t idx = layout.offset;
+  return parse_string(buf.get(), buf_len, idx, layout.n_vals);
 }
 
 // Read an integer INFO vector, stopping early if an END_OF_VECTOR (`INT32_MIN + 1`) padding sentinel is hit.
-std::vector<std::int32_t> Info::get_ints(const InfoType & type) const {
+std::vector<std::int32_t> Info::get_ints(const InfoLayout & layout) const {
   std::vector<std::int32_t> vals;
-  vals.reserve(type.n_vals);
+  vals.reserve(layout.n_vals);
   const char * raw = buf.get();
-  std::uint32_t idx = type.offset;
-  for (std::uint32_t j = 0; j < type.n_vals; j++) {
-    std::int32_t v = parse_raw_int(raw, buf_len, idx, type.type_size);
+  std::uint32_t idx = layout.offset;
+  for (std::uint32_t j = 0; j < layout.n_vals; j++) {
+    std::int32_t v = parse_raw_int(raw, buf_len, idx, layout.type_size);
     if (v == INT32_MIN + 1) {
       break;
     }
@@ -129,12 +129,12 @@ std::vector<std::int32_t> Info::get_ints(const InfoType & type) const {
 }
 
 // Read a float INFO vector as raw 32-bit words, stopping early at `BCF_FLOAT_VECTOR_END`.
-std::vector<std::uint32_t> Info::get_floats_bits(const InfoType & type) const {
+std::vector<std::uint32_t> Info::get_floats_bits(const InfoLayout & layout) const {
   std::vector<std::uint32_t> vals;
-  vals.reserve(type.n_vals);
+  vals.reserve(layout.n_vals);
   const char * raw = buf.get();
-  std::uint32_t idx = type.offset;
-  for (std::uint32_t j = 0; j < type.n_vals; j++) {
+  std::uint32_t idx = layout.offset;
+  for (std::uint32_t j = 0; j < layout.n_vals; j++) {
     std::uint32_t bits = parse_raw_float(raw, buf_len, idx);
     if (bits == BCF_FLOAT_VECTOR_END) {
       break;

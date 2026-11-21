@@ -21,6 +21,7 @@ struct Chunk {
   std::uint64_t begin;
   std::uint64_t end;
 };
+static_assert(sizeof(Chunk) == 16, "CSI chunk records are two packed uint64 offsets");
 
 // One CSI octree bin: `loffset` is the virtual offset of the earliest record overlapping
 // the bin's subtree (used to prune upstream chunks), followed by its BGZF chunk list.
@@ -40,7 +41,6 @@ public:
   explicit IndexFile(const std::string & path) { open(path, true); }
   IndexFile() = default;
   bool open(const std::string & path, bool required = true);
-  std::vector<std::uint32_t> region_to_bins(std::int64_t beg, std::int64_t end) const;
   bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
   bool has_index = false;
 };

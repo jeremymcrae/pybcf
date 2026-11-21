@@ -229,7 +229,7 @@ class TestIndexed(unittest.TestCase):
             with self.assertRaises(ValueError):
                 BcfReader(tmp_bcf)
 
-            for min_shift, depth in ((14, 0x40000000), (0, 20)):
+            for min_shift, depth in ((14, 0x40000000), (0, 20), (0, 11)):
                 with gzip.open(tmp_csi, 'wb') as gz:
                     gz.write(b'CSI\x01' + struct.pack('<iiii', min_shift, depth, 0, 0))
                 with self.assertRaises(ValueError):
@@ -288,6 +288,47 @@ class TestIndexed(unittest.TestCase):
             self.assertEqual(len(list(bcf.fetch('chr1', 1, 3))), 3)
             # chr3 has contig_id >= indices.size() in this truncated CSI
             self.assertEqual(list(bcf.fetch('chr3')), [])
+
+    def test_csi_with_tiny_bins(self):
+        ''' check a CSI with 1 bp leaf bins at maximum depth fetches the same variants quickly
+        '''
+        raw = gzip.open(self.test_cases.with_suffix('.bcf.csi'), 'rb').read()
+        min_shift, depth, l_aux = struct.unpack_from('<iii', raw, 4)
+        bin_limit = ((1 << (3 * (depth + 1))) - 1) // 7
+        pos = 16 + l_aux
+        n_ref = struct.unpack_from('<i', raw, pos)[0]
+        pos += 4
+
+        # Move every real chunk into the root bin of a min_shift=0, depth=10 index, so a
+        # whole-contig query overlaps over a billion possible leaf bins
+        tiny = b'CSI\x01' + struct.pack('<iiii', 0, 10, 0, n_ref)
+        for _ in range(n_ref):
+            n_bins = struct.unpack_from('<i', raw, pos)[0]
+            pos += 4
+            chunks = []
+            for _ in range(n_bins):
+                bin_idx, _, n_chunks = struct.unpack_from('<IQi', raw, pos)
+                pos += 16
+                if bin_idx < bin_limit:  # skip htslib's metadata pseudo-bin
+                    chunks.append(raw[pos:pos + 16 * n_chunks])
+                pos += 16 * n_chunks
+            payload = b''.join(chunks)
+            if payload:
+                tiny += struct.pack('<iIQi', 1, 0, 0, len(payload) // 16) + payload
+            else:
+                tiny += struct.pack('<i', 0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tiny_csi = Path(tmpdir) / 'tiny.csi'
+            with gzip.open(tiny_csi, 'wb') as gz:
+                gz.write(tiny)
+
+            real = BcfReader(self.test_cases)
+            tiny_bins = BcfReader(self.test_cases, index_path=tiny_csi)
+            for chrom in real.header.contigs:
+                expected = [(v.chrom, v.pos) for v in real.fetch(chrom)]
+                self.assertEqual([(v.chrom, v.pos) for v in tiny_bins.fetch(chrom)], expected)
+            self.assertEqual(len(list(tiny_bins.fetch('chr1', 1, 3))), 3)
 
     def test_fetch_spanning_deletion_and_none_bounds(self):
         ''' check fetch includes upstream spanning deletions and supports start=None/stop=None

@@ -45,11 +45,11 @@ bool BCF::nextvar(Variant & var) {
   if (exhausted) {
     return false;
   }
-  if (var.read(infile, header, query_contig_id, query_start, query_end)) {
-    return true;
-  }
+  // A read that throws leaves the stream part-way through a record, where the following
+  // bytes could pass for a record of their own. So only carry on after a successful read.
   exhausted = true;
-  return false;
+  exhausted = !var.read(infile, header, query_contig_id, query_start, query_end);
+  return !exhausted;
 }
 
 /// @brief seek to a 1-based inclusive genomic region `[start, end]` using the CSI index
@@ -74,13 +74,13 @@ void BCF::set_region(const std::string & chrom, std::int32_t start, std::int32_t
   query_end = end;
 
   // CSI bins use 0-based half-open `[beg, end)` coordinates, so convert 1-based `start`
-  // to `max(0, start - 1)`.
+  // to `max(0, start - 1)`. There is nothing to read if the index has no chunk for the
+  // region, or if the seek throws.
+  exhausted = true;
   Offsets offset;
   if (idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end, offset)) {
     infile.seek(offset);
     exhausted = false;
-  } else {
-    exhausted = true;
   }
 }
 

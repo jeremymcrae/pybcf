@@ -719,6 +719,21 @@ class TestBcfReader(unittest.TestCase):
             grown_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - peak_kb
             self.assertLess(grown_kb, 100_000)
 
+    def test_reading_stops_after_corrupt_record(self):
+        ''' check a reader stops after a failed read, rather than carrying on from mid-record
+        '''
+        header = ('##fileformat=VCFv4.2\n##contig=<ID=chr1,length=1000>\n'
+                  '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'bad_contig.bcf'
+            # The first record names a contig missing from the header. The bytes after
+            # its fixed fields would pass for a record, as would the record after it.
+            write_bcf(path, header, [record(chrom=7, body=record()), record(pos0=19)])
+            bcf = BcfReader(path)
+            with self.assertRaisesRegex(ValueError, 'unknown contig index'):
+                next(bcf)
+            self.assertEqual(list(bcf), [])
+
     def test_key_lookup_and_corrupt_record_errors(self):
         ''' check missing INFO/FORMAT keys return False/KeyError while corrupt records raise ValueError
         '''

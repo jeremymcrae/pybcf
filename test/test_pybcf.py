@@ -15,6 +15,8 @@ from pybcf import BcfReader
 import pybcf
 import pybcf.reader as pybcf_reader
 
+from .helpers import record, write_bcf
+
 def get_pysam_probs(var, alt_idx):
     ''' get unphased biallelic genotype data
     '''
@@ -255,6 +257,29 @@ class TestBcfReader(unittest.TestCase):
                 write_header_bcf(bad_path, bad_hdr.encode('utf8'))
                 with self.assertRaises(ValueError):
                     BcfReader(bad_path)
+
+    def test_header_idx_limits(self):
+        ''' check IDX values too large to be real are rejected, with a message saying so
+        '''
+        lines = '##fileformat=VCFv4.2\n{}\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n'
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'idx.bcf'
+            for line in (
+                '##INFO=<ID=A,Number=1,Type=Integer,IDX=65537>',
+                '##FORMAT=<ID=A,Number=1,Type=Integer,IDX=65537>',
+                '##FILTER=<ID=A,IDX=65537>',
+                '##contig=<ID=chr1,IDX=4194305>',
+                '##contig=<ID=chr1,IDX=99999999999999999999>',
+            ):
+                write_bcf(path, lines.format(line))
+                with self.assertRaisesRegex(ValueError, 'IDX field out of range'):
+                    BcfReader(path)
+
+            # contigs can be far more numerous than INFO/FORMAT/FILTER fields
+            write_bcf(path, lines.format('##contig=<ID=chr1,IDX=70000>'))
+            self.assertEqual(BcfReader(path).header.contigs, ['chr1'])
+            write_bcf(path, lines.format('##INFO=<ID=A,Number=1,Type=Integer,IDX=65536>'))
+            self.assertEqual(BcfReader(path).header.info, ['A'])
 
     def test_negative_info_ints_and_empty_info(self):
         ''' check negative int8/int16/int32 INFO values and zero-INFO variants match pysam

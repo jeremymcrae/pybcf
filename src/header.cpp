@@ -7,8 +7,10 @@ namespace bcf {
 
 namespace {
 
-// Upper sanity bound on `IDX=` values to prevent malformed headers from allocating huge vectors.
-const unsigned long MAX_HEADER_IDX = 1UL << 22;
+// Upper bounds on `IDX=` values, so a malformed header cannot make the lookup tables huge.
+// Draft assemblies can have millions of contigs; FILTER/INFO/FORMAT names are far fewer.
+const std::uint32_t MAX_CONTIG_IDX = 1u << 22;
+const std::uint32_t MAX_DICT_IDX = 1u << 16;
 
 /// @brief strip specified characters from the ends of a string
 std::string trim(const std::string & s, const std::string & vals) {
@@ -20,8 +22,8 @@ std::string trim(const std::string & s, const std::string & vals) {
   return s.substr(start, (end + 1) - start);
 }
 
-/// @brief parse a non-negative bounded IDX attribute from a BCF header tag
-std::uint32_t parse_idx(const std::string & s) {
+/// @brief parse the `IDX` attribute of a header line, which must be a number up to `max_idx`
+std::uint32_t parse_idx(const std::string & s, std::uint32_t max_idx) {
   if (s.empty()) {
     throw std::invalid_argument("empty IDX field in BCF header");
   }
@@ -30,15 +32,11 @@ std::uint32_t parse_idx(const std::string & s) {
       throw std::invalid_argument("invalid IDX field in BCF header: " + s);
     }
   }
-  try {
-    unsigned long val = std::stoul(s);
-    if (val > MAX_HEADER_IDX) {
-      throw std::invalid_argument("IDX field out of range in BCF header: " + s);
-    }
-    return static_cast<std::uint32_t>(val);
-  } catch (const std::exception &) {
-    throw std::invalid_argument("invalid IDX field in BCF header: " + s);
+  // Numbers of up to 9 digits always fit in 32 bits; longer ones are over any limit.
+  if (s.size() > 9 || std::stoul(s) > max_idx) {
+    throw std::invalid_argument("IDX field out of range in BCF header: " + s);
   }
+  return static_cast<std::uint32_t>(std::stoul(s));
 }
 
 /// @brief parse `<Key=Value,...>` attributes from a `##INFO`/`##FORMAT`/`##FILTER`/`##contig` line
@@ -155,7 +153,7 @@ Header::Header(const std::string & text) {
     if (kind == "contig") {
       std::uint32_t entry_idx = 0;
       if (idx_it != data.end()) {
-        entry_idx = parse_idx(idx_it->second);
+        entry_idx = parse_idx(idx_it->second, MAX_CONTIG_IDX);
         contig_idx = entry_idx + 1;
       } else {
         if (contig_ids.find(id) != contig_ids.end()) {
@@ -179,7 +177,7 @@ Header::Header(const std::string & text) {
       }
       std::uint32_t entry_idx = 0;
       if (has_idx) {
-        entry_idx = parse_idx(idx_it->second);
+        entry_idx = parse_idx(idx_it->second, MAX_DICT_IDX);
         seen_idx = true;
       } else {
         seen_no_idx = true;

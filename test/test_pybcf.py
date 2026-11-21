@@ -550,6 +550,7 @@ class TestBcfReader(unittest.TestCase):
                 '##FORMAT=<ID=FF,Number=1,Type=Float,Description="ff",IDX=11>\n'
                 '##FORMAT=<ID=FT,Number=1,Type=String,Description="ft",IDX=12>\n'
                 '##INFO=<ID=FLG_V21,Number=0,Type=Flag,Description="fv21",IDX=13>\n'
+                '##FORMAT=<ID=FZ,Number=1,Type=Integer,Description="fz",IDX=14>\n'
                 '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\tS2\n\x00'
             ).encode('utf8')
             info_payload = (
@@ -568,9 +569,10 @@ class TestBcfReader(unittest.TestCase):
                 b'\x11\x0a\x01'  # DP (int8, n_vals=0 across 2 samples) -> [nan, nan]
                 b'\x11\x0b\x05'  # FF (float, n_vals=0 across 2 samples) -> [nan, nan]
                 b'\x11\x0c\x07'  # FT (char, n_vals=0 across 2 samples) -> [('',), ('',)]
+                b'\x11\x0e\x00'  # FZ (untyped, n_vals=0 across 2 samples) -> [nan, nan]
             )
             shared = (
-                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 10, (3 << 24) | 2)
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 10, (4 << 24) | 2)
                 + b'\x07\x17A\x00'
                 + info_payload
             )
@@ -589,6 +591,8 @@ class TestBcfReader(unittest.TestCase):
             self.assertEqual(rec_pybcf.samples['FF'].shape, (2,))
             self.assertTrue(np.isnan(rec_pybcf.samples['FF']).all())
             self.assertEqual(rec_pybcf.samples['FT'], [('',), ('',)])
+            self.assertEqual(rec_pybcf.samples['FZ'].shape, (2,))
+            self.assertTrue(np.isnan(rec_pybcf.samples['FZ']).all())
 
             # Genuine IEEE NaN vs BCF MISSING/reserved sentinels, plus explicit MISSING in FILTER
             nan_bcf = Path(tmpdir) / 'nan_and_reserved.bcf'
@@ -750,6 +754,8 @@ class TestBcfReader(unittest.TestCase):
                 (struct.pack('<iiiIII', 0, 0x7FFFFFFF, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17A\x00', b'', False),
                 # varid encoded as int8 instead of char_
                 (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, 0) + b'\x11\x05\x17A\x00', b'', False),
+                # varid overflow length descriptor holding 0 integers instead of exactly 1
+                (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, 0) + b'\xf7\x01\x00\x17A\x00', b'', False),
                 # GT encoded as char_ instead of integer
                 (struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, (1 << 24) | 1) + b'\x07\x17A\x00',
                  b'\x11\x01\x17A', True),

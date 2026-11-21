@@ -310,7 +310,8 @@ cdef class BcfSampleData:
         cdef double[::1] i_arr
         cdef float[::1] f_arr
 
-        if fmt_type.data_type == int8 or fmt_type.data_type == int16 or fmt_type.data_type == int32:
+        # Untyped (`flag`) FORMAT fields always have zero values, so they share the empty-int path.
+        if fmt_type.data_type in (flag, int8, int16, int32):
             if n_vals == 0:
                 return np.full(shape, np.nan, dtype=np.float64)
             raw_arr = np.empty(n_vals, dtype=np.float64, order='C')

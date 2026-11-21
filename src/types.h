@@ -117,7 +117,7 @@ public:
       // Read the follow-up integer type byte and decode the true vector length.
       std::uint8_t len_byte = get_byte(buf, buf_len, idx);
       std::uint8_t len_type = len_byte & 0x0F;
-      if ((len_byte >> 4) > 1 || (len_type != int8 && len_type != int16 && len_type != int32)) {
+      if ((len_byte >> 4) != 1 || (len_type != int8 && len_type != int16 && len_type != int32)) {
         throw std::invalid_argument("cannot identify number of bytes to read");
       }
       std::int32_t count = parse_raw_int(buf, buf_len, idx, type_sizes[len_type]);

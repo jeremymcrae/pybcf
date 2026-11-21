@@ -24,7 +24,8 @@ class GzReader {
   std::size_t buf_len = 0;
   std::size_t buf_pos = 0;
 
-  void check_error(int status);
+  std::size_t read_raw(char * dst, std::size_t count);
+  bool fill();
 public:
   GzReader() = default;
   explicit GzReader(const std::string & filepath) { open(filepath); }

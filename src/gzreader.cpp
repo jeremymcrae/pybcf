@@ -66,51 +66,53 @@ void GzReader::close() {
   }
 }
 
-void GzReader::check_error(int status) {
+// Decompress up to `count` bytes into `dst`, returning 0 once the end of the file is reached.
+std::size_t GzReader::read_raw(char * dst, std::size_t count) {
+  if (file == nullptr) {
+    throw std::invalid_argument("cannot read from closed file: " + path);
+  }
+  int got = gzread(file, dst, static_cast<unsigned int>(count));
+  if (got > 0) {
+    return static_cast<std::size_t>(got);
+  }
+  // Nothing was read, which is an error unless the file ended cleanly.
   int errnum = 0;
   const char * msg = gzerror(file, &errnum);
-  if (status < 0 || (errnum != Z_OK && errnum != Z_STREAM_END)) {
+  if (got < 0 || (errnum != Z_OK && errnum != Z_STREAM_END)) {
     throw std::invalid_argument(msg && *msg ? msg : "error reading compressed file: " + path);
   }
+  return 0;
+}
+
+// Refill `buffer` with the next bytes of the file, returning false if there are none.
+bool GzReader::fill() {
+  buf_pos = 0;
+  buf_len = 0;
+  buf_len = read_raw(buffer.data(), BUFFER_SIZE);
+  return buf_len > 0;
 }
 
 // Serve small reads out of `buffer` with `memcpy`, while reading large payloads
 // (`>= BUFFER_SIZE`, such as multi-thousand-sample blocks) straight into `dst`.
 std::size_t GzReader::read(void * dst, std::size_t count) {
-  if (file == nullptr) {
-    throw std::invalid_argument("cannot read from closed file: " + path);
-  }
   char * out = static_cast<char *>(dst);
   std::size_t total = 0;
-
   while (total < count) {
-    std::size_t avail = buf_len - buf_pos;
-    if (avail > 0) {
-      std::size_t take = std::min(count - total, avail);
+    std::size_t remaining = count - total;
+    if (buf_pos < buf_len) {
+      std::size_t take = std::min(remaining, buf_len - buf_pos);
       std::memcpy(out + total, buffer.data() + buf_pos, take);
       buf_pos += take;
       total += take;
-      continue;
-    }
-
-    std::size_t rem = count - total;
-    if (rem >= BUFFER_SIZE) {
-      unsigned int chunk = static_cast<unsigned int>(std::min<std::size_t>(rem, 1u << 30));
-      int got = gzread(file, out + total, chunk);
-      if (got <= 0) {
-        check_error(got);
+    } else if (remaining >= BUFFER_SIZE) {
+      // `gzread` takes a 32-bit count, so read at most 1 GB per call.
+      std::size_t got = read_raw(out + total, std::min<std::size_t>(remaining, 1u << 30));
+      if (got == 0) {
         break;
       }
-      total += static_cast<std::size_t>(got);
-    } else {
-      int got = gzread(file, buffer.data(), BUFFER_SIZE);
-      buf_pos = 0;
-      if (got <= 0) {
-        buf_len = 0;
-        check_error(got);
-        break;
-      }
-      buf_len = static_cast<std::size_t>(got);
+      total += got;
+    } else if (!fill()) {
+      break;
     }
   }
   return total;
@@ -124,25 +126,13 @@ void GzReader::read_exact(void * dst, std::size_t count, const char * err_msg) {
 
 // Advance past `count` uncompressed bytes without allocating or copying into a caller buffer.
 void GzReader::skip(std::size_t count, const char * err_msg) {
-  if (file == nullptr) {
-    throw std::invalid_argument("cannot read from closed file: " + path);
-  }
   while (count > 0) {
-    std::size_t avail = buf_len - buf_pos;
-    if (avail > 0) {
-      std::size_t take = std::min(count, avail);
-      buf_pos += take;
-      count -= take;
-      continue;
-    }
-    int got = gzread(file, buffer.data(), BUFFER_SIZE);
-    buf_pos = 0;
-    if (got <= 0) {
-      buf_len = 0;
-      check_error(got);
+    if (buf_pos == buf_len && !fill()) {
       throw std::invalid_argument(err_msg);
     }
-    buf_len = static_cast<std::size_t>(got);
+    std::size_t take = std::min(count, buf_len - buf_pos);
+    buf_pos += take;
+    count -= take;
   }
 }
 

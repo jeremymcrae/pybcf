@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 from pybcf import BcfReader
-from pysam import BGZFile, VariantFile, tabix_index
+from pysam import VariantFile, tabix_index
 
 from .helpers import record, write_bcf
 
@@ -209,41 +209,39 @@ class TestIndexed(unittest.TestCase):
     def test_raise_error_without_index(self):
         ''' check we get an error if we fetch from a bcf without an index file
         '''
-        index_path = self.test_cases.with_suffix('.bcf.csi')
-        temp_path = self.test_cases.with_suffix('.bcf.BACKUP')
-        
-        try:
-            index_path.rename(temp_path)
-            bcf = BcfReader(self.test_cases)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # a copy of the bcf, without the index file that sits next to the original
+            path = Path(tmpdir) / 'no_index.bcf'
+            shutil.copy(self.test_cases, path)
+            bcf = BcfReader(path)
             chrom = next(bcf).chrom
             with self.assertRaises(ValueError):
                 bcf.fetch(chrom)
-        finally:
-            temp_path.rename(index_path)
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+            # an index path given by the user has to exist
             with self.assertRaises(ValueError):
                 BcfReader(self.hapmap, index_path=Path(tmpdir) / 'missing.csi')
 
+    def test_invalid_index_files_raise(self):
+        ''' check index files that are not CSI, or have impossible values, are rejected
+        '''
+        with tempfile.TemporaryDirectory() as tmpdir:
             tmp_bcf = Path(tmpdir) / 'corrupt_idx.bcf'
             tmp_csi = Path(tmpdir) / 'corrupt_idx.bcf.csi'
             shutil.copy(self.test_cases, tmp_bcf)
-            with gzip.open(tmp_csi, 'wb') as gz:
-                gz.write(b'NOT_CSI')
-            with self.assertRaises(ValueError):
-                BcfReader(tmp_bcf)
-
-            for min_shift, depth in ((14, 0x40000000), (0, 20), (0, 11)):
+            for contents in (
+                b'NOT_CSI',
+                # min_shift and depth that are too large, alone or together
+                b'CSI\x01' + struct.pack('<iiii', 14, 0x40000000, 0, 0),
+                b'CSI\x01' + struct.pack('<iiii', 0, 20, 0, 0),
+                b'CSI\x01' + struct.pack('<iiii', 0, 11, 0, 0),
+                # one contig, with a negative number of bins
+                b'CSI\x01' + struct.pack('<iiiii', 14, 5, 0, 1, -1),
+            ):
                 with gzip.open(tmp_csi, 'wb') as gz:
-                    gz.write(b'CSI\x01' + struct.pack('<iiii', min_shift, depth, 0, 0))
+                    gz.write(contents)
                 with self.assertRaises(ValueError):
                     BcfReader(tmp_bcf)
-
-            # Negative n_bin count in CSI must raise ValueError
-            with gzip.open(tmp_csi, 'wb') as gz:
-                gz.write(b'CSI\x01' + struct.pack('<iiiii', 14, 5, 0, 1, -1))
-            with self.assertRaises(ValueError):
-                BcfReader(tmp_bcf)
 
     def test_fetch_after_changing_directory(self):
         ''' check a reader opened with a relative path can fetch after a change of directory
@@ -434,18 +432,18 @@ class TestIndexed(unittest.TestCase):
             self.assertEqual([v.pos for v in bcf.fetch('chr1', 36000, None)], [100, 37000, 49153])
             self.assertEqual([v.pos for v in bcf.fetch('chr1', None, 300)], [100, 200])
 
-            # Telomeric POS = 0 (pos0 = -1) records must be included when start is None or 0
-            telo_path = Path(tmpdir) / 'telomeric.bcf'
-            hdr = b'##fileformat=VCFv4.2\n##contig=<ID=chr1,length=1000,IDX=0>\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n\x00'
-            rec_telo = struct.pack('<iiiIII', 0, -1, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17N\x00'
-            rec_norm = struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, 1 << 16, 0) + b'\x07\x17A\x00'
-            with BGZFile(telo_path, 'wb') as bgz:
-                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(hdr)) + hdr)
-                bgz.write(struct.pack('<II', len(rec_telo), 0) + rec_telo)
-                bgz.write(struct.pack('<II', len(rec_norm), 0) + rec_norm)
-            tabix_index(str(telo_path), preset='bcf', csi=True, force=True)
+    def test_fetch_telomeric_position(self):
+        ''' check records at POS 0 (the telomere) are fetched when start is None or 0
+        '''
+        header = ('##fileformat=VCFv4.2\n'
+                  '##contig=<ID=chr1,length=1000,IDX=0>\n'
+                  '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'telomeric.bcf'
+            # POS 0 is stored as a 0-based position of -1
+            write_bcf(path, header, [record(pos0=-1, body=b'\x07\x17N\x00'), record()])
+            tabix_index(str(path), preset='bcf', csi=True, force=True)
 
-            telo_bcf = BcfReader(telo_path)
-            self.assertEqual([v.pos for v in telo_bcf.fetch('chr1')], [0, 10])
-            self.assertEqual([v.pos for v in telo_bcf.fetch('chr1', 0, 5)], [0])
-
+            bcf = BcfReader(path)
+            self.assertEqual([v.pos for v in bcf.fetch('chr1')], [0, 10])
+            self.assertEqual([v.pos for v in bcf.fetch('chr1', 0, 5)], [0])

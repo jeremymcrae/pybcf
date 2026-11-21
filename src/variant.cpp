@@ -93,15 +93,14 @@ bool find_record(GzReader & infile, const Header & header, const Region & region
 }
 
 // Decode FILTER, a vector of indices into the header's filters. MISSING entries are skipped.
-std::vector<std::uint32_t> parse_filters(const char * buf, std::uint32_t buf_len,
-                                         std::uint32_t & idx, const Header & header) {
-  TypeDescriptor desc(buf, buf_len, idx);
+std::vector<std::uint32_t> parse_filters(Cursor & cursor, const Header & header) {
+  TypeDescriptor desc(cursor);
   if (desc.n_vals > 0 && !is_int_type(desc.type)) {
     throw std::invalid_argument("expected integer BCF filter indices");
   }
   std::vector<std::uint32_t> filter_ids;
   for (std::uint32_t i = 0; i < desc.n_vals; i++) {
-    std::int32_t filter_idx = parse_int(buf, buf_len, idx, desc.type_size);
+    std::int32_t filter_idx = cursor.read_int(desc.type_size);
     if (filter_idx == INT32_MIN) {
       continue;
     }
@@ -134,21 +133,20 @@ bool Variant::read(GzReader & infile, const Header & header, const Region & regi
     shared_buf.reset(new char[shared_len]);
     infile.read_exact(shared_buf.get(), shared_len, "truncated BCF variant record");
   }
-  const char * buf = shared_buf.get();
 
   // Decode the fields in front of INFO, which follow one another in the buffer.
-  std::uint32_t idx = 0;
-  varid = parse_typed_string(buf, shared_len, idx);
-  ref = parse_typed_string(buf, shared_len, idx);
+  Cursor cursor(shared_buf.get(), shared_len);
+  varid = cursor.read_typed_string();
+  ref = cursor.read_typed_string();
   alts.resize(hdr.n_allele() - 1);
   for (std::string & alt : alts) {
-    alt = parse_typed_string(buf, shared_len, idx);
+    alt = cursor.read_typed_string();
   }
-  filter_ids = parse_filters(buf, shared_len, idx, header);
+  filter_ids = parse_filters(cursor, header);
 
-  // `Info` takes over the buffer, where INFO starts at `idx`, and `SampleData` reads the
-  // per-sample block. Both decode their fields only when asked to.
-  info = Info(std::move(shared_buf), shared_len, idx, &header, hdr.n_info());
+  // `Info` takes over the buffer, where INFO starts at the cursor, and `SampleData` reads
+  // the per-sample block. Both decode their fields only when asked to.
+  info = Info(std::move(shared_buf), shared_len, cursor.offset(), &header, hdr.n_info());
   sample_data = SampleData(infile, header, hdr.l_indiv, hdr.n_fmt(), hdr.n_sample());
   return true;
 }

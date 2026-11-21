@@ -29,12 +29,11 @@ void Info::parse() {
     is_parsed = true;
     return;
   }
-  const char * raw = buf.get();
   fields.reserve(n_info);
-  std::uint32_t buf_idx = info_offset;
+  Cursor cursor(buf.get(), buf_len, info_offset);
   for (std::uint32_t i = 0; i < n_info; i++) {
     // Decode the INFO tag's header dictionary index and validate it against the header.
-    std::int32_t id_idx = parse_typed_int(raw, buf_len, buf_idx);
+    std::int32_t id_idx = cursor.read_typed_int();
     if (id_idx < 0 || static_cast<std::size_t>(id_idx) >= header->info.size() ||
         header->info[id_idx].id.empty()) {
       throw std::invalid_argument("unknown INFO ID index: " + std::to_string(id_idx));
@@ -42,12 +41,12 @@ void Info::parse() {
     std::uint32_t uid = static_cast<std::uint32_t>(id_idx);
     const InfoField * field = &header->info[uid];
 
-    // Read the value's type/length descriptor and ensure its payload fits within `buf`.
-    TypeDescriptor desc(raw, buf_len, buf_idx);
-    std::uint64_t field_bytes = static_cast<std::uint64_t>(desc.n_vals) * desc.type_size;
-    if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
-      throw std::invalid_argument("INFO field exceeds BCF shared buffer");
-    }
+    // Read the value's type/length descriptor, then step over its payload, which must
+    // fit within `buf`.
+    TypeDescriptor desc(cursor);
+    std::uint32_t offset = cursor.offset();
+    cursor.skip(static_cast<std::uint64_t>(desc.n_vals) * desc.type_size,
+                "INFO field exceeds BCF shared buffer");
 
     if (desc.type == flag && desc.n_vals != 0) {
       throw std::invalid_argument("invalid BCF INFO flag length");
@@ -70,8 +69,7 @@ void Info::parse() {
       kind = ((desc.n_vals > 1) || field->is_list) ? info_vector_int : info_scalar_int;
     }
 
-    fields.push_back({uid, field, {kind, desc.type_size, buf_idx, desc.n_vals}});
-    buf_idx += static_cast<std::uint32_t>(field_bytes);
+    fields.push_back({uid, field, {kind, desc.type_size, offset, desc.n_vals}});
   }
 
   is_parsed = true;
@@ -92,30 +90,26 @@ bool Info::find(const char * key, std::size_t key_len, InfoLayout & out) {
 }
 
 std::int32_t Info::get_int(const InfoLayout & layout) const {
-  std::uint32_t idx = layout.offset;
-  return parse_int(buf.get(), buf_len, idx, layout.type_size);
+  return Cursor(buf.get(), buf_len, layout.offset).read_int(layout.type_size);
 }
 
 // Return raw IEEE-754 bits so Python can distinguish BCF_FLOAT_MISSING (`None`) from literal `NaN`.
 std::uint32_t Info::get_float_bits(const InfoLayout & layout) const {
-  std::uint32_t idx = layout.offset;
-  std::uint32_t bits = parse_raw_float(buf.get(), buf_len, idx);
+  std::uint32_t bits = Cursor(buf.get(), buf_len, layout.offset).read_raw_float();
   return (bits == BCF_FLOAT_VECTOR_END) ? BCF_FLOAT_MISSING : bits;
 }
 
 std::string Info::get_string(const InfoLayout & layout) const {
-  std::uint32_t idx = layout.offset;
-  return parse_string(buf.get(), buf_len, idx, layout.n_vals);
+  return Cursor(buf.get(), buf_len, layout.offset).read_string(layout.n_vals);
 }
 
 // Read an integer INFO vector, stopping early if an END_OF_VECTOR (`INT32_MIN + 1`) padding sentinel is hit.
 std::vector<std::int32_t> Info::get_ints(const InfoLayout & layout) const {
   std::vector<std::int32_t> vals;
   vals.reserve(layout.n_vals);
-  const char * raw = buf.get();
-  std::uint32_t idx = layout.offset;
+  Cursor cursor(buf.get(), buf_len, layout.offset);
   for (std::uint32_t j = 0; j < layout.n_vals; j++) {
-    std::int32_t v = parse_raw_int(raw, buf_len, idx, layout.type_size);
+    std::int32_t v = cursor.read_raw_int(layout.type_size);
     if (v == INT32_MIN + 1) {
       break;
     }
@@ -128,10 +122,9 @@ std::vector<std::int32_t> Info::get_ints(const InfoLayout & layout) const {
 std::vector<std::uint32_t> Info::get_floats_bits(const InfoLayout & layout) const {
   std::vector<std::uint32_t> vals;
   vals.reserve(layout.n_vals);
-  const char * raw = buf.get();
-  std::uint32_t idx = layout.offset;
+  Cursor cursor(buf.get(), buf_len, layout.offset);
   for (std::uint32_t j = 0; j < layout.n_vals; j++) {
-    std::uint32_t bits = parse_raw_float(raw, buf_len, idx);
+    std::uint32_t bits = cursor.read_raw_float();
     if (bits == BCF_FLOAT_VECTOR_END) {
       break;
     }

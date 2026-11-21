@@ -31,12 +31,11 @@ void SampleData::parse() {
     is_parsed = true;
     return;
   }
-  const char * raw = buf.get();
   fields.reserve(n_fmt);
-  std::uint32_t buf_idx = 0;
+  Cursor cursor(buf.get(), buf_len);
   for (std::uint32_t i = 0; i < n_fmt; i++) {
     // Read the FORMAT tag's dictionary ID and look up its definition in the header.
-    std::int32_t format_idx = parse_typed_int(raw, buf_len, buf_idx);
+    std::int32_t format_idx = cursor.read_typed_int();
     if (format_idx < 0 || static_cast<std::size_t>(format_idx) >= header->format.size() ||
         header->format[format_idx].id.empty()) {
       throw std::invalid_argument("unknown FORMAT index: " + std::to_string(format_idx));
@@ -46,7 +45,7 @@ void SampleData::parse() {
     bool is_gt = fmt_field->is_gt;
 
     // Read the per-sample element type and per-sample vector length (`n_vals`).
-    TypeDescriptor desc(raw, buf_len, buf_idx);
+    TypeDescriptor desc(cursor);
     if (desc.type == flag && desc.n_vals != 0) {
       throw std::invalid_argument("invalid BCF FORMAT flag length");
     }
@@ -54,17 +53,14 @@ void SampleData::parse() {
       throw std::invalid_argument("GT field must be encoded as integer");
     }
 
-    // Verify the contiguous value block for all samples fits inside `buf`, then
-    // record the byte offset and skip ahead to the next FORMAT field.
+    // Record where the values start, then step over the contiguous block of them for
+    // all samples, which must fit inside `buf`, to reach the next FORMAT field.
+    FormatLayout layout = {desc.type, desc.type_size, cursor.offset(), desc.n_vals, is_gt};
     std::uint64_t field_bytes = static_cast<std::uint64_t>(desc.n_vals) *
                                 static_cast<std::uint64_t>(desc.type_size) *
                                 static_cast<std::uint64_t>(n_samples);
-    if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
-      throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
-    }
-    FormatLayout layout = {desc.type, desc.type_size, buf_idx, desc.n_vals, is_gt};
+    cursor.skip(field_bytes, "FORMAT field exceeds BCF sample buffer");
     fields.push_back({uid, fmt_field, layout});
-    buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
   is_parsed = true;
 }
@@ -121,10 +117,11 @@ void SampleData::read_ints(const FormatLayout & layout, double * dst) const {
   }
 #endif
 
-  std::uint32_t offset = layout.offset + static_cast<std::uint32_t>(n * layout.type_size);
+  Cursor cursor(buf.get(), buf_len,
+                layout.offset + static_cast<std::uint32_t>(n * layout.type_size));
   const double qnan = std::nan("");
   for (; n < max_n; n++) {
-    std::int32_t v = parse_int(buf.get(), buf_len, offset, layout.type_size);
+    std::int32_t v = cursor.read_int(layout.type_size);
     if (layout.is_gt) {
       v = (v < 0) ? -1 : (v >> 1) - 1;
       dst[n] = (v < 0) ? qnan : static_cast<double>(v);
@@ -160,11 +157,11 @@ void SampleData::read_phase(const FormatLayout & layout, std::uint8_t * dst) con
 
   // In BCF, allele 0 carries no phase relative to a prior allele; a sample is phased if
   // every non-padding allele after the first (`i > 0`, `v >= 0`) has its low phase bit set.
-  std::uint32_t offset = layout.offset + s * layout.n_vals * layout.type_size;
+  Cursor cursor(raw, buf_len, layout.offset + s * layout.n_vals * layout.type_size);
   for (; s < n_samples; s++) {
     std::uint8_t is_phased = 1;
     for (std::uint32_t i = 0; i < layout.n_vals; i++) {
-      std::int32_t v = parse_int(raw, buf_len, offset, layout.type_size);
+      std::int32_t v = cursor.read_int(layout.type_size);
       if (v >= 0 && i > 0) {
         is_phased &= static_cast<std::uint8_t>(v & 1);
       }
@@ -211,9 +208,9 @@ std::vector<std::string> SampleData::get_strings(const FormatLayout & layout) co
   if (n_samples == 0 || layout.n_vals == 0) {
     return vals;
   }
-  std::uint32_t offset = layout.offset;
+  Cursor cursor(buf.get(), buf_len, layout.offset);
   for (std::uint32_t n = 0; n < n_samples; n++) {
-    vals[n] = parse_string(buf.get(), buf_len, offset, layout.n_vals);
+    vals[n] = cursor.read_string(layout.n_vals);
   }
   return vals;
 }

@@ -2,13 +2,19 @@
 #define BCF_GZREADER_H
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include "zlib.h"
 
-#include "index.h"
-
 namespace bcf {
+
+// Decoded BGZF virtual offset: `c_offset` is the byte offset of a compressed BGZF
+// block in the BCF file, and `u_offset` is the byte offset inside that uncompressed block.
+struct Offsets {
+  std::uint64_t u_offset; // uncompressed offset (within bgzf chunk)
+  std::uint64_t c_offset; // compressed offset (within overall file)
+};
 
 // Buffered binary reader over a zlib gzFile with BGZF virtual-offset seeking.
 class GzReader {
@@ -21,12 +27,12 @@ class GzReader {
   void check_error(int status);
 public:
   GzReader() = default;
-  explicit GzReader(const std::string & path) { open(path); }
+  explicit GzReader(const std::string & filepath) { open(filepath); }
   GzReader(const GzReader &) = delete;
   GzReader & operator=(const GzReader &) = delete;
   ~GzReader() { close(); }
 
-  void open(const std::string & path);
+  void open(const std::string & filepath);
   void close();
   bool is_open() const { return file != nullptr; }
 

@@ -1,20 +1,14 @@
 #ifndef BCF_INDEX_H
 #define BCF_INDEX_H
 
-#include <climits>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-namespace bcf {
+#include "gzreader.h"
 
-// Decoded BGZF virtual offset: `c_offset` is the byte offset of a compressed BGZF
-// block in the BCF file, and `u_offset` is the byte offset inside that uncompressed block.
-struct Offsets {
-  std::uint64_t u_offset; // uncompressed offset (within bgzf chunk)
-  std::uint64_t c_offset; // compressed offset (within overall file)
-};
+namespace bcf {
 
 // Half-open BGZF virtual-offset span `[begin, end)` of records belonging to a CSI bin.
 struct Chunk {
@@ -38,8 +32,6 @@ class IndexFile {
 
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:
-  explicit IndexFile(const std::string & path) { open(path, true); }
-  IndexFile() = default;
   bool open(const std::string & path, bool required = true);
   bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
   bool has_index = false;

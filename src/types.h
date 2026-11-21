@@ -1,14 +1,11 @@
 #ifndef BCF_TYPES_H
 #define BCF_TYPES_H
 
-#include <climits>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace bcf {
 
@@ -109,7 +106,6 @@ public:
   Types type = flag;
   std::uint32_t n_vals = 0;
   std::uint8_t type_size = 0;
-  Typed() = default;
 
   Typed(const char * buf, std::size_t buf_len, std::uint32_t & idx) {
     set_type(get_byte(buf, buf_len, idx));

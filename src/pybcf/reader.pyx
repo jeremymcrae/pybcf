@@ -26,7 +26,6 @@ cdef extern from 'types.h' namespace 'bcf':
 cdef extern from 'bcf.h' namespace 'bcf':
     cdef cppclass BCF:
         BCF(const string & path, const string & index_path) except +
-        BCF() except +
         bool nextvar(Variant &) except +
         void set_region(const string & chrom, int32_t start, int32_t end) except +
         void close() except +
@@ -40,8 +39,6 @@ cdef extern from 'header.h' namespace 'bcf':
         string id
 
     cdef cppclass Header:
-        Header() except +
-        Header(const string & text) except +
         vector[string] contigs
         vector[InfoField] info
         vector[string] filters
@@ -70,7 +67,6 @@ cdef extern from 'info.h' namespace 'bcf':
         InfoType info
 
     cdef cppclass Info:
-        Info() except +
         size_t size() except +
         vector[NamedInfo] & get_fields() except +
         bool get_type(const char *, size_t, InfoType &) except +
@@ -93,7 +89,6 @@ cdef extern from 'sample_data.h' namespace 'bcf':
         FormatType format
 
     cdef cppclass SampleData:
-        SampleData() except +
         size_t size() except +
         vector[NamedFormat] & get_fields() except +
         bool get_type(const char *, size_t, FormatType &) except +

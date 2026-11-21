@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <cstring>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -30,10 +29,6 @@ static_assert(sizeof(RecordHeader) == 32, "BCF2 fixed record header must be 32 b
 const std::uint32_t FIXED_SHARED_BYTES = 24;
 
 } // namespace
-
-bool Variant::read(GzReader & infile, const Header & header) {
-  return read(infile, header, -1, 0, INT32_MAX);
-}
 
 /// @brief read the next variant record matching an optional 1-based inclusive region filter
 bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_contig_id,
@@ -104,7 +99,6 @@ bool Variant::read(GzReader & infile, const Header & header, std::int32_t query_
 
     chrom_id = static_cast<std::uint32_t>(hdr.chrom_id);
     pos = rec_pos;
-    rlen = hdr.rlen;
 
     // Normalize any reserved BCF float sentinel in QUAL to `BCF_FLOAT_MISSING` while keeping NaN intact.
     qual_bits = is_bcf_float_missing(hdr.qual_bits) ? BCF_FLOAT_MISSING : hdr.qual_bits;

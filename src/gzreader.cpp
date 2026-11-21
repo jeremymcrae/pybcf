@@ -276,21 +276,22 @@ void GzReader::skip(std::size_t count, const char * err_msg) {
   }
 }
 
-// A BGZF virtual offset points at a compressed block (`c_offset`) and a position in its
-// uncompressed bytes (`u_offset`), so read from that block next, then skip into it.
-void GzReader::seek(Offsets offset) {
+// A BGZF virtual offset points at a compressed block, and a position in its uncompressed
+// bytes, so read from that block next, then skip into it.
+void GzReader::seek(std::uint64_t virtual_offset) {
   if (bgzf < 0) {
     throw std::invalid_argument("can only seek within a bgzipped file: " + path);
   }
+  std::size_t within_block = virtual_offset & 0xffff;
   buf_pos = 0;
   buf_len = 0;
   raw_pos = 0;
   raw_len = 0;
-  file_pos = offset.c_offset;
-  if (offset.u_offset > 0 && (!fill() || offset.u_offset > buf_len)) {
+  file_pos = virtual_offset >> 16;
+  if (within_block > 0 && (!fill() || within_block > buf_len)) {
     throw std::invalid_argument("cannot seek within uncompressed bgzf block");
   }
-  buf_pos = static_cast<std::size_t>(offset.u_offset);
+  buf_pos = within_block;
 }
 
 } // namespace bcf

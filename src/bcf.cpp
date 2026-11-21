@@ -77,7 +77,7 @@ void BCF::set_region(const std::string & chrom, std::int32_t start, std::int32_t
   // to `max(0, start - 1)`. There is nothing to read if the index has no chunk for the
   // region, or if the seek throws.
   exhausted = true;
-  Offsets offset;
+  std::uint64_t offset = 0;
   if (idxfile.query(contig_id, std::max<std::int64_t>(0, start - 1), end, offset)) {
     infile.seek(offset);
     exhausted = false;

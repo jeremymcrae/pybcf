@@ -9,13 +9,6 @@
 
 namespace bcf {
 
-// Decoded BGZF virtual offset: `c_offset` is the byte offset of a compressed BGZF
-// block in the BCF file, and `u_offset` is the byte offset inside that uncompressed block.
-struct Offsets {
-  std::uint64_t u_offset; // uncompressed offset (within bgzf chunk)
-  std::uint64_t c_offset; // compressed offset (within overall file)
-};
-
 // Buffered binary reader over a compressed BCF or CSI file, with BGZF virtual-offset seeking.
 // BGZF files, the usual case, are decompressed one block at a time with zlib's `inflate`.
 // Plain gzip and uncompressed files fall back to zlib's streaming `gzread`, and can't seek.
@@ -63,9 +56,10 @@ public:
   // Advance past `count` uncompressed bytes, throwing std::invalid_argument on early EOF.
   void skip(std::size_t count, const char * err_msg = "unexpected end of file");
 
-  // Seek to a BGZF virtual offset (compressed block offset + uncompressed intra-block offset).
+  // Seek to a BGZF virtual offset. Its upper 48 bits are the offset in the file of a
+  // compressed block, and its lower 16 bits are an offset in that block's uncompressed bytes.
   // Throws std::invalid_argument for files without BGZF compression.
-  void seek(Offsets offset);
+  void seek(std::uint64_t virtual_offset);
 };
 
 } // namespace bcf

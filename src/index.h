@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include "gzreader.h"
-
 namespace bcf {
 
 // Half-open BGZF virtual-offset span `[begin, end)` of records belonging to a CSI bin.
@@ -34,7 +32,8 @@ class IndexFile {
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:
   void open(const std::string & path, bool required);
-  bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
+  bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end,
+             std::uint64_t & virtual_offset) const;
   bool has_index = false;
 };
 

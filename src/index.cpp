@@ -8,11 +8,6 @@ namespace bcf {
 
 namespace {
 
-/// @brief split a 64-bit BGZF virtual offset into intra-block (low 16 bits) and file (high 48 bits) offsets
-Offsets parse_virtual_offset(std::uint64_t v_offset) {
-  return {v_offset & 0xffffULL, v_offset >> 16};
-}
-
 /// @brief index of the first CSI 8-ary tree bin at `level` (`sum_{k=0..level-1} 8^k = (8^level - 1) / 7`)
 std::int64_t first_bin_at_level(std::int32_t level) {
   return ((1LL << (level * 3)) - 1) / 7;
@@ -105,7 +100,8 @@ void IndexFile::open(const std::string & path, bool required) {
 
 /// @brief find the earliest BGZF virtual offset of a chunk that can overlap 0-based `[beg, end)`
 /// The caller checks the region first, so `0 <= beg <= end`.
-bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const {
+bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end,
+                      std::uint64_t & virtual_offset) const {
   if (contig_id >= indices.size() || beg >= max_coord()) {
     return false;
   }
@@ -156,7 +152,7 @@ bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t en
     return false;
   }
   // A chunk can begin before `min_off`; the records in that first part cannot overlap.
-  out = parse_virtual_offset(std::max(best_offset, min_off));
+  virtual_offset = std::max(best_offset, min_off);
   return true;
 }
 

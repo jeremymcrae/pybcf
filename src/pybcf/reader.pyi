@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
+from os import PathLike
 from types import TracebackType
 from typing import Any, NoReturn, TypeVar, overload
 
@@ -90,7 +90,11 @@ class BcfVariant:
     def samples(self) -> BcfSampleData: ...
 
 class BcfReader:
-    def __init__(self, path: str | Path, index_path: str | Path | None = None) -> None: ...
+    def __init__(
+        self,
+        path: str | PathLike[str],
+        index_path: str | PathLike[str] | None = None,
+    ) -> None: ...
     def close(self) -> None: ...
     def __repr__(self) -> str: ...
     def __iter__(self) -> BcfReader: ...

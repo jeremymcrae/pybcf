@@ -1,6 +1,6 @@
 # cython: boundscheck=False, wraparound=False
 import logging
-from pathlib import Path
+import os
 
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize
 from libcpp cimport bool
@@ -446,13 +446,10 @@ cdef class BcfReader:
     def __cinit__(self, path, index_path=None):
         self.thisptr = NULL
         self.is_open = False
-        path = str(path) if isinstance(path, Path) else path
-        index_path = str(index_path) if isinstance(index_path, Path) else index_path
-        self.path = path.encode('utf8')
-        if index_path is None:
-            index_path = b''
-        else:
-            index_path = index_path.encode('utf8')
+        # Store the absolute path. `fetch()` reopens the file by name to seek, which has
+        # to keep working if the working directory changes after opening.
+        self.path = os.fsencode(os.path.abspath(path))
+        index_path = b'' if index_path is None else os.fsencode(index_path)
 
         logging.debug(f'opening BcfReader from {self.path.decode("utf8")}')
         self.thisptr = new BCF(self.path, index_path)

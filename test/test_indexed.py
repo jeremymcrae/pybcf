@@ -1,6 +1,7 @@
 
 import gzip
 import itertools
+import os
 import shutil
 import struct
 import tempfile
@@ -243,6 +244,20 @@ class TestIndexed(unittest.TestCase):
                 gz.write(b'CSI\x01' + struct.pack('<iiiii', 14, 5, 0, 1, -1))
             with self.assertRaises(ValueError):
                 BcfReader(tmp_bcf)
+
+    def test_fetch_after_changing_directory(self):
+        ''' check a reader opened with a relative path can fetch after a change of directory
+        '''
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                os.chdir(self.hapmap.parent)
+                bcf = BcfReader(self.hapmap.name)
+                chrom = next(bcf).chrom
+                os.chdir(tmpdir)
+                self.assertGreater(len(list(bcf.fetch(chrom))), 0)
+            finally:
+                os.chdir(cwd)
 
     def test_fetch_empty_chrom_on_fresh_reader(self):
         ''' check fetching an empty contig works without prior iteration

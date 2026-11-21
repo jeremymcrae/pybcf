@@ -527,7 +527,7 @@ class TestBcfReader(unittest.TestCase):
         runtime_classes = {
             name: {attr for attr in dir(cls) if not attr.startswith('_')}
             for name, cls in vars(pybcf_reader).items()
-            if isinstance(cls, type) and not name.startswith('_') and name != 'Path'
+            if isinstance(cls, type) and not name.startswith('_')
         }
         self.assertEqual(stub_classes, runtime_classes)
 

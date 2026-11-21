@@ -1,5 +1,6 @@
 
 import gzip
+import itertools
 import shutil
 import struct
 import tempfile
@@ -8,6 +9,8 @@ from pathlib import Path
 
 from pybcf import BcfReader
 from pysam import BGZFile, VariantFile, tabix_index
+
+from .helpers import record, write_bcf
 
 class TestIndexed(unittest.TestCase):
     ''' class to make sure BcfReader works correctly
@@ -329,6 +332,63 @@ class TestIndexed(unittest.TestCase):
                 expected = [(v.chrom, v.pos) for v in real.fetch(chrom)]
                 self.assertEqual([(v.chrom, v.pos) for v in tiny_bins.fetch(chrom)], expected)
             self.assertEqual(len(list(tiny_bins.fetch('chr1', 1, 3))), 3)
+
+    def test_fetch_starting_in_empty_window(self):
+        ''' check a fetch that starts where there are no variants begins reading nearby
+
+        A record that crosses a top-level bin boundary is stored in the root bin of
+        the index. A query starting in a 16 kb window without variants used to begin
+        reading from that record, however far upstream it was. The BGZF blocks in
+        between are corrupted here, so reading through them raises an error.
+        '''
+        boundary = 1 << 26
+        gap_start, gap_end = 100_000_000, 100_200_000
+        positions = (list(range(1_000_000, boundary - 1000, 1_000_000))
+                     + [boundary - 500]
+                     + list(range(67_200_000, gap_start, 2000))
+                     + list(range(gap_end, gap_end + 200_000, 2000)))
+        header = ('##fileformat=VCFv4.2\n'
+                  '##contig=<ID=chr1,length=248956422>\n'
+                  '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n')
+        # the record at the boundary spans 1 kb, the others are a single base
+        records = [record(pos0=pos - 1, rlen=1000 if pos == boundary - 500 else 1)
+                   for pos in positions]
+        regions = [(gap_start + 50_000, gap_start + 60_000),
+                   (gap_start + 50_000, gap_end + 50_000)]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'gap.bcf'
+            write_bcf(path, header, records)
+            tabix_index(str(path), preset='bcf', csi=True, force=True)
+
+            with VariantFile(str(path)) as vcf:
+                expected = [[v.pos for v in vcf.fetch('chr1', start - 1, end)]
+                            for start, end in regions]
+            self.assertEqual(expected[0], [])
+            self.assertEqual(len(expected[1]), 26)
+
+            # find the uncompressed bytes from the boundary record to a record 100 kb
+            # before the gap, then corrupt every BGZF block inside that. Opening the
+            # file reads 64 kb ahead, so blocks that close to the start are left alone.
+            starts = list(itertools.accumulate([9 + len(header) + 1] + [len(x) for x in records]))
+            lo = starts[positions.index(boundary - 500) + 1] + 65536
+            hi = starts[positions.index(gap_start - 100_000)]
+            raw = bytearray(path.read_bytes())
+            offset = uncompressed = n_corrupted = 0
+            while offset < len(raw):
+                size = struct.unpack_from('<H', raw, offset + 16)[0] + 1
+                length = struct.unpack_from('<I', raw, offset + size - 4)[0]
+                if lo <= uncompressed and uncompressed + length <= hi:
+                    raw[offset + size // 2] ^= 0xff
+                    n_corrupted += 1
+                offset += size
+                uncompressed += length
+            self.assertGreater(n_corrupted, 0)
+            path.write_bytes(raw)
+
+            bcf = BcfReader(path)
+            for (start, end), sites in zip(regions, expected):
+                self.assertEqual([v.pos for v in bcf.fetch('chr1', start, end)], sites)
 
     def test_fetch_spanning_deletion_and_none_bounds(self):
         ''' check fetch includes upstream spanning deletions and supports start=None/stop=None

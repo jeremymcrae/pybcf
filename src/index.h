@@ -3,7 +3,6 @@
 
 #include <cstdint>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "gzreader.h"
@@ -17,9 +16,11 @@ struct Chunk {
 };
 static_assert(sizeof(Chunk) == 16, "CSI chunk records are two packed uint64 offsets");
 
-// One CSI octree bin: `loffset` is the virtual offset of the earliest record overlapping
-// the bin's subtree (used to prune upstream chunks), followed by its BGZF chunk list.
+// One CSI octree bin: `id` is its number in the tree, `loffset` is the virtual offset of
+// the first record overlapping the start of the bin (used to skip upstream chunks), and
+// `chunks` are the file ranges holding the bin's records.
 struct Bin {
+  std::uint32_t id;
   std::uint64_t loffset;
   std::vector<Chunk> chunks;
 };
@@ -28,7 +29,7 @@ struct Bin {
 class IndexFile {
   std::int32_t min_shift = 0; // log2 width (in bp) of leaf-level bins (typically 14 -> 16 kb)
   std::int32_t depth = 0;     // octree depth (0 = root only; typically 5)
-  std::vector<std::unordered_map<std::uint32_t, Bin>> indices;
+  std::vector<std::vector<Bin>> indices; // bins of each contig, sorted by `id`
 
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:

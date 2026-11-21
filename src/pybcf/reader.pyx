@@ -2,6 +2,7 @@
 import logging
 import os
 
+cimport cython
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize
 from libcpp cimport bool
 from libc.stddef cimport size_t
@@ -168,13 +169,12 @@ cdef class BcfInfo:
     cdef Info * thisptr
     cdef BcfVariant _variant
 
+    def __cinit__(self, BcfVariant variant not None):
+        self.thisptr = &variant.thisptr.info
+        self._variant = variant
+
     def __init__(self, *args, **kwargs):
         raise TypeError('cannot instantiate BcfInfo directly')
-
-    cdef set_data(self, Info * info, BcfVariant variant):
-        ''' assigns Info to python class '''
-        self.thisptr = info
-        self._variant = variant
 
     # Borrow Python's internal UTF-8 buffer directly via `PyUnicode_AsUTF8AndSize`
     # so key lookups do not allocate a temporary `bytes` or `std::string`.
@@ -251,13 +251,12 @@ cdef class BcfSampleData:
     cdef SampleData * thisptr
     cdef BcfVariant _variant
 
+    def __cinit__(self, BcfVariant variant not None):
+        self.thisptr = &variant.thisptr.sample_data
+        self._variant = variant
+
     def __init__(self, *args, **kwargs):
         raise TypeError('cannot instantiate BcfSampleData directly')
-
-    cdef set_data(self, SampleData * data, BcfVariant variant):
-        ''' assigns SampleData to python class '''
-        self.thisptr = data
-        self._variant = variant
 
     cdef inline bool _find(self, key, FormatLayout & layout):
         if not isinstance(key, str):
@@ -357,7 +356,7 @@ cdef class BcfSampleData:
 cdef class BcfVariant:
     cdef Variant thisptr
     cdef BcfReader _reader
-    def __cinit__(self, BcfReader bcf):
+    def __cinit__(self, BcfReader bcf not None):
         self._reader = bcf
 
     def __init__(self, *args, **kwargs):
@@ -367,7 +366,11 @@ cdef class BcfVariant:
     def chrom(self):
         ''' chromosome/contig name
         '''
-        return self._reader._get_contig_ids()[self.thisptr.chrom_id]
+        # Variants from a reader always have a contig in the header. One made directly
+        # with `BcfVariant.__new__` has contig 0, which a header without contigs lacks,
+        # so this lookup is the one place that checks bounds.
+        with cython.boundscheck(True):
+            return self._reader._get_contig_ids()[self.thisptr.chrom_id]
 
     @property
     def contig(self):
@@ -419,21 +422,18 @@ cdef class BcfVariant:
     # Create lightweight BcfInfo / BcfSampleData wrappers on demand rather than caching
     # them on BcfVariant; caching creates a reference cycle that delays freeing large
     # per-variant sample buffers until Python's cyclic garbage collector runs.
+    # `__new__` runs `__cinit__` but skips `__init__`, which forbids direct construction.
     @property
     def info(self):
         ''' variant info data
         '''
-        cdef BcfInfo info = BcfInfo.__new__(BcfInfo)
-        info.set_data(&self.thisptr.info, self)
-        return info
+        return BcfInfo.__new__(BcfInfo, self)
 
     @property
     def samples(self):
         ''' variant sample data
         '''
-        cdef BcfSampleData samples = BcfSampleData.__new__(BcfSampleData)
-        samples.set_data(&self.thisptr.sample_data, self)
-        return samples
+        return BcfSampleData.__new__(BcfSampleData, self)
 
 cdef class BcfReader:
     ''' class to open bcf files from disk, and access variant data within
@@ -558,4 +558,3 @@ cdef class BcfReader:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
-        return False

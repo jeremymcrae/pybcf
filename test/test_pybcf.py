@@ -501,6 +501,23 @@ class TestBcfReader(unittest.TestCase):
                 cls()
         with self.assertRaises(TypeError):
             type(var)(bcf)
+        # `__new__` skips `__init__`, so the wrappers must also refuse to exist without
+        # the object they read from
+        for cls in (type(var.info), type(var.samples), type(var)):
+            for args in ((), (None,)):
+                with self.assertRaises(TypeError):
+                    cls.__new__(cls, *args)
+
+        # A variant made with `__new__` is empty, and has no contig to name if the
+        # header lacks contigs
+        with tempfile.TemporaryDirectory() as tmpdir:
+            no_contigs = Path(tmpdir) / 'no_contigs.bcf'
+            write_bcf(no_contigs, '##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n')
+            empty = type(var).__new__(type(var), BcfReader(no_contigs))
+            self.assertEqual((empty.pos, empty.ref, empty.alts, empty.filter), (0, '', None, []))
+            self.assertEqual((len(empty.info), len(empty.samples)), (0, 0))
+            with self.assertRaises(IndexError):
+                empty.chrom
 
         # Sites-only BCF has 0 samples; phased should return an empty bool array
         sites_var = next(BcfReader(sites_bcf))

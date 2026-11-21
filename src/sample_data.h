@@ -40,10 +40,6 @@ class SampleData {
   std::unique_ptr<char[]> buf;
 
   void parse();
-  void read_geno(const FormatType & type, double * dst) const;
-  void read_8bit_ints(const FormatType & type, double * dst) const;
-  void read_16bit_ints(const FormatType & type, double * dst) const;
-  void read_32bit_ints(const FormatType & type, double * dst) const;
 public:
   SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt, std::uint32_t n_samples);
   SampleData() = default;

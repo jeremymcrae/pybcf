@@ -1,9 +1,11 @@
 
 import gzip
 import itertools
+import multiprocessing
 import os
 import shutil
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +21,7 @@ class TestIndexed(unittest.TestCase):
     
     hapmap = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
     test_cases = Path(__file__).parent / 'data' / 'bcfv2.2.bcf'
+    many_samples = Path(__file__).parent / 'data' / '1000G.shrunk.bcf'
     
     def test_fetch_exists(self):
         ''' check this package has a fetch method
@@ -256,6 +259,39 @@ class TestIndexed(unittest.TestCase):
                 self.assertGreater(len(list(bcf.fetch(chrom))), 0)
             finally:
                 os.chdir(cwd)
+
+    @unittest.skipUnless(hasattr(os, 'fork'), 'needs forked processes')
+    def test_fetch_in_forked_process(self):
+        ''' check a forked copy of a reader can fetch, without disturbing the original
+
+        The two copies share one open file. The file is much larger than the 64 kb
+        read at a time, so the original reads more of it after the copy has fetched.
+        '''
+        sites = [(x.chrom, x.pos) for x in BcfReader(self.many_samples)]
+        bcf = BcfReader(self.many_samples)
+        first = next(bcf)
+
+        def fetch_last_site():
+            fetched = [(x.chrom, x.pos) for x in bcf.fetch(*sites[-1])]
+            sys.exit(0 if fetched == sites[-1:] else 1)
+
+        child = multiprocessing.get_context('fork').Process(target=fetch_last_site)
+        child.start()
+        child.join()
+        self.assertEqual(child.exitcode, 0)
+
+        rest = [(x.chrom, x.pos) for x in bcf]
+        self.assertEqual([(first.chrom, first.pos)] + rest, sites)
+
+    def test_fetch_without_bgzf_raises(self):
+        ''' check fetching from a BCF that isn't bgzipped raises an error, even with an index
+        '''
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'uncompressed.bcf'
+            path.write_bytes(gzip.open(self.test_cases).read())
+            bcf = BcfReader(path, index_path=self.test_cases.with_suffix('.bcf.csi'))
+            with self.assertRaisesRegex(ValueError, 'bgzipped'):
+                bcf.fetch('chr1')
 
     def test_fetch_empty_chrom_on_fresh_reader(self):
         ''' check fetching an empty contig works without prior iteration

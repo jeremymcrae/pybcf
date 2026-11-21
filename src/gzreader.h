@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <string>
 #include <vector>
 #include "zlib.h"
@@ -20,17 +19,26 @@ struct Offsets {
 // Buffered binary reader over a compressed BCF or CSI file, with BGZF virtual-offset seeking.
 // BGZF files, the usual case, are decompressed one block at a time with zlib's `inflate`.
 // Plain gzip and uncompressed files fall back to zlib's streaming `gzread`, and can't seek.
+//
+// A BGZF file is read at offsets this reader tracks itself, rather than at the file's own
+// position. Copies of a reader in forked processes share that position, and so would
+// otherwise move it under each other.
 class GzReader {
   std::string path;
-  std::FILE * bgzf = nullptr;        // BGZF only: the open file
+  int bgzf = -1;                     // BGZF only: the open file
+  std::uint64_t file_pos = 0;        // BGZF only: offset in the file of the next bytes to read
+  std::vector<unsigned char> raw;    // BGZF only: compressed bytes read from the file
+  std::size_t raw_len = 0;
+  std::size_t raw_pos = 0;           // BGZF only: start of the next block in `raw`
+  std::size_t compressed_size = 0;   // BGZF only: size of the next block in `raw`
+  std::size_t block_size = 0;        // BGZF only: uncompressed size of the next block
   z_stream strm{};                   // BGZF only: inflate state, reset for each block
-  std::vector<unsigned char> block;  // BGZF only: compressed bytes of the next block
-  std::size_t block_size = 0;        // BGZF only: uncompressed size of `block`
   gzFile file = nullptr;             // other files: zlib's streaming reader
   std::vector<char> buffer;          // decompressed bytes not yet returned
   std::size_t buf_len = 0;
   std::size_t buf_pos = 0;
 
+  bool load(std::size_t count);
   bool next_block();
   void inflate_block(char * dst);
   std::size_t read_raw(char * dst, std::size_t count);
@@ -44,7 +52,7 @@ public:
 
   void open(const std::string & filepath);
   void close();
-  bool is_open() const { return bgzf != nullptr || file != nullptr; }
+  bool is_open() const { return bgzf >= 0 || file != nullptr; }
 
   // Read up to `count` bytes into `dst`; returns fewer than `count` only at EOF.
   std::size_t read(void * dst, std::size_t count);

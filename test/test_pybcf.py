@@ -5,6 +5,8 @@ import gzip
 import os
 import resource
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -254,6 +256,20 @@ class TestBcfReader(unittest.TestCase):
                             self.assertEqual(var.samples[key], other.samples[key])
                         else:
                             np.testing.assert_array_equal(var.samples[key], other.samples[key])
+
+    @unittest.skipUnless(os.path.exists('/dev/stdin'), 'needs /dev/stdin')
+    def test_read_from_pipe(self):
+        ''' check a BCF can be read from a pipe, with or without compression
+        '''
+        path = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
+        sites = [f'{x.chrom} {x.pos}' for x in BcfReader(path)]
+        code = ('from pybcf import BcfReader\n'
+                'for x in BcfReader("/dev/stdin"):\n'
+                '    print(x.chrom, x.pos)')
+        for data in (path.read_bytes(), gzip.open(path).read()):
+            piped = subprocess.run([sys.executable, '-c', code], input=data,
+                                   capture_output=True, check=True)
+            self.assertEqual(piped.stdout.decode().splitlines(), sites)
 
     def test_header_quoted_commas_and_blank_lines(self):
         ''' check header parsing handles blank lines, and quoted commas/equals/backslashes
@@ -803,6 +819,28 @@ class TestBcfReader(unittest.TestCase):
                 BcfReader(huge_header)
             grown_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - peak_kb
             self.assertLess(grown_kb, 100_000)
+
+    def test_corrupt_bgzf_blocks_raise(self):
+        ''' check a BGZF block with a bad checksum or length is rejected, as is data after the last block
+        '''
+        raw = (Path(__file__).parent / 'data' / 'bcfv2.2.bcf').read_bytes()
+        # the first block's header holds its size minus 1, and the block ends with a
+        # checksum, then the length of its uncompressed data
+        size = struct.unpack_from('<H', raw, 16)[0] + 1
+        length = struct.unpack_from('<I', raw, size - 4)[0]
+        bad_checksum = bytearray(raw)
+        bad_checksum[size - 8] ^= 0xff
+        bad_length = bytearray(raw)
+        struct.pack_into('<I', bad_length, size - 4, length + 1)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'corrupt.bcf'
+            for contents, error in ((bad_checksum, 'incorrect data check'),
+                                    (bad_length, 'incorrect length check'),
+                                    (raw + b'extra', 'invalid BGZF block header')):
+                path.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, error):
+                    list(BcfReader(path))
 
     def test_reading_stops_after_corrupt_record(self):
         ''' check a reader stops after a failed read, rather than carrying on from mid-record

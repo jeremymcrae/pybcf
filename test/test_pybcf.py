@@ -772,6 +772,31 @@ class TestBcfReader(unittest.TestCase):
                     if check_samples:
                         _ = rec.samples['GT']
 
+            # Repeated INFO/FORMAT keys in one record: the first copy wins, like htslib
+            dup_hdr = (
+                '##fileformat=VCFv4.2\n'
+                '##contig=<ID=chr1,length=1000>\n'
+                '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">\n'
+                '##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="GQ">\n'
+                '#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n\x00'
+            ).encode('utf8')
+            dup_shared = (
+                struct.pack('<iiiIII', 0, 9, 1, 0x7F800001, (1 << 16) | 2, (2 << 24) | 1)
+                + b'\x07\x17A\x00'
+                + b'\x11\x01\x11\x05\x11\x01\x11\x07'  # DP=5, then DP=7
+            )
+            dup_indiv = b'\x11\x02\x11\x0a\x11\x02\x11\x0b'  # GQ=10, then GQ=11
+            dup_bcf = Path(tmpdir) / 'dup_keys.bcf'
+            with BGZFile(dup_bcf, 'wb') as bgz:
+                bgz.write(b'BCF\x02\x02' + struct.pack('<I', len(dup_hdr)) + dup_hdr)
+                bgz.write(struct.pack('<II', len(dup_shared), len(dup_indiv)) + dup_shared + dup_indiv)
+            dup_pysam = next(VariantFile(dup_bcf))
+            dup_pybcf = next(BcfReader(dup_bcf))
+            self.assertEqual(dup_pybcf.info['DP'], dup_pysam.info['DP'])
+            self.assertEqual(dup_pybcf.info['DP'], 5)
+            self.assertEqual(dup_pybcf.samples['GQ'][0], dup_pysam.samples['S1']['GQ'])
+            self.assertEqual(dup_pybcf.samples['GQ'][0], 10)
+
 class TestBcfv2_2(unittest.TestCase):
     ''' class to work through a BCFv2.2 file with some edge cases in data fields
     '''

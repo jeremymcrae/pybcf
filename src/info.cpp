@@ -74,26 +74,15 @@ void Info::parse() {
       kind = ((type_val.n_vals > 1) || field->is_list) ? info_vector_int : info_scalar_int;
     }
 
-    // If a duplicate INFO tag appears in the same record, keep the last occurrence.
-    InfoType info_type = {kind, type_val.type_size, buf_idx, type_val.n_vals};
-    bool updated = false;
-    for (auto & entry : fields) {
-      if (entry.id_idx == uid) {
-        entry.info = info_type;
-        updated = true;
-        break;
-      }
-    }
-    if (!updated) {
-      fields.push_back({uid, field, info_type});
-    }
+    fields.push_back({uid, field, {kind, type_val.type_size, buf_idx, type_val.n_vals}});
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
 
   is_parsed = true;
 }
 
-// Look up an INFO field by name without allocating a temporary std::string.
+// Look up an INFO field by name without allocating a temporary std::string. If a malformed
+// record repeats a key, the first copy wins, matching htslib.
 bool Info::get_type(const char * key, std::size_t key_len, InfoType & out) {
   parse();
   for (const auto & entry : fields) {

@@ -72,20 +72,7 @@ void SampleData::parse() {
     if (static_cast<std::uint64_t>(buf_idx) + field_bytes > buf_len) {
       throw std::invalid_argument("FORMAT field exceeds BCF sample buffer");
     }
-    FormatType fmt = {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno};
-
-    // If the same FORMAT key appears twice in one record, keep the last occurrence.
-    bool updated = false;
-    for (auto & entry : fields) {
-      if (entry.id_idx == uid) {
-        entry.format = fmt;
-        updated = true;
-        break;
-      }
-    }
-    if (!updated) {
-      fields.push_back({uid, fmt_field, fmt});
-    }
+    fields.push_back({uid, fmt_field, {type_val.type, type_val.type_size, buf_idx, type_val.n_vals, is_geno}});
     buf_idx += static_cast<std::uint32_t>(field_bytes);
   }
   is_parsed = true;
@@ -101,7 +88,8 @@ std::vector<NamedFormat> & SampleData::get_fields() {
   return fields;
 }
 
-// Look up a FORMAT field by name without allocating a temporary std::string.
+// Look up a FORMAT field by name without allocating a temporary std::string. If a malformed
+// record repeats a key, the first copy wins, matching htslib.
 bool SampleData::get_type(const char * key, std::size_t key_len, FormatType & out) {
   parse();
   for (const auto & entry : fields) {

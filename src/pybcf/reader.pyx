@@ -33,18 +33,20 @@ cdef extern from 'bcf.h' namespace 'bcf':
         Header header
 
 cdef extern from 'header.h' namespace 'bcf':
+    cdef struct InfoField:
+        string id
+
+    cdef struct FormatField:
+        string id
+
     cdef cppclass Header:
         Header() except +
         Header(const string & text) except +
         vector[string] contigs
+        vector[InfoField] info
         vector[string] filters
+        vector[FormatField] format
         vector[string] samples
-        vector[string] get_contigs() except +
-        vector[string] get_info() except +
-        vector[string] get_filters() except +
-        vector[string] get_formats() except +
-        vector[string] get_info_by_idx() except +
-        vector[string] get_formats_by_idx() except +
 
 cdef extern from 'info.h' namespace 'bcf':
     cdef enum InfoKind:
@@ -123,64 +125,46 @@ cdef inline object _decode_float(uint32_t bits):
     memcpy(&val, &bits, sizeof(val))
     return val
 
-# Lookup tables on BcfReader map integer header IDX values directly to decoded
-# Python strings, avoiding repeated C++ string copies and UTF-8 decoding per variant.
-cdef inline tuple _decode_ids(vector[string] vec):
-    return tuple([None if x.empty() else x.decode('utf8') for x in vec])
+# Header IDX values can have gaps, which are stored as empty strings and decoded to None.
+cdef inline object _decode_id(const string & s):
+    return None if s.empty() else s.decode('utf8')
 
-# Thin Python view over `BCF.header`; holds a reference to `_reader` so the
-# underlying C++ `Header` cannot be freed while `BcfHeader` is still alive.
+# Plain snapshot of the header's names, filled in by `BcfReader.header`. It holds no
+# reference back to the reader, so accessing `.header` never delays closing the file.
 cdef class BcfHeader:
-    cdef Header * thisptr
-    cdef BcfReader _reader
     cdef list _samples, _contigs, _info, _filters, _formats
 
     def __init__(self, *args, **kwargs):
         raise TypeError('cannot instantiate BcfHeader directly')
 
-    cdef set_data(self, Header * header, BcfReader reader):
-        ''' assigns Header to python class '''
-        self.thisptr = header
-        self._reader = reader
-
     @property
     def samples(self):
         ''' list of sample IDs in the BCF
         '''
-        if self._samples is None:
-            self._samples = [x.decode('utf8') for x in self.thisptr.samples]
         return self._samples
 
     @property
     def contigs(self):
         ''' list of possible contigs in the BCF
         '''
-        if self._contigs is None:
-            self._contigs = [x.decode('utf8') for x in self.thisptr.get_contigs()]
         return self._contigs
 
     @property
     def filters(self):
         ''' list of possible filters in the BCF
         '''
-        if self._filters is None:
-            self._filters = [x.decode('utf8') for x in self.thisptr.get_filters()]
         return self._filters
 
     @property
     def formats(self):
         ''' list of possible format fields per variant
         '''
-        if self._formats is None:
-            self._formats = [x.decode('utf8') for x in self.thisptr.get_formats()]
         return self._formats
 
     @property
     def info(self):
         ''' list of possible info fields per variant
         '''
-        if self._info is None:
-            self._info = [x.decode('utf8') for x in self.thisptr.get_info()]
         return self._info
 
 # Mapping-like view over `Variant.info`; holds `_variant` so the shared buffer
@@ -484,25 +468,26 @@ cdef class BcfReader:
             self.thisptr = NULL
         self.is_open = False
 
-    # Lazily build and cache IDX-indexed Python string tuples once per open BCF file.
+    # Lazily build and cache IDX-indexed Python string tuples once per open BCF file,
+    # so variants map integer IDs to names without per-variant string decoding.
     cdef inline tuple _get_contig_ids(self):
         if self._contig_ids is None:
-            self._contig_ids = _decode_ids(self.thisptr.header.contigs)
+            self._contig_ids = tuple([_decode_id(x) for x in self.thisptr.header.contigs])
         return self._contig_ids
 
     cdef inline tuple _get_filter_ids(self):
         if self._filter_ids is None:
-            self._filter_ids = _decode_ids(self.thisptr.header.filters)
+            self._filter_ids = tuple([_decode_id(x) for x in self.thisptr.header.filters])
         return self._filter_ids
 
     cdef inline tuple _get_info_ids(self):
         if self._info_ids is None:
-            self._info_ids = _decode_ids(self.thisptr.header.get_info_by_idx())
+            self._info_ids = tuple([_decode_id(x.id) for x in self.thisptr.header.info])
         return self._info_ids
 
     cdef inline tuple _get_format_ids(self):
         if self._format_ids is None:
-            self._format_ids = _decode_ids(self.thisptr.header.get_formats_by_idx())
+            self._format_ids = tuple([_decode_id(x.id) for x in self.thisptr.header.format])
         return self._format_ids
 
     def close(self):
@@ -532,9 +517,15 @@ cdef class BcfReader:
     def header(self):
         ''' header info from bcf file
         '''
+        cdef BcfHeader header
         if self._header is None:
-            self._header = BcfHeader.__new__(BcfHeader)
-            self._header.set_data(&self.thisptr.header, self)
+            header = BcfHeader.__new__(BcfHeader)
+            header._samples = [x.decode('utf8') for x in self.thisptr.header.samples]
+            header._contigs = [x for x in self._get_contig_ids() if x is not None]
+            header._filters = [x for x in self._get_filter_ids() if x is not None]
+            header._formats = [x for x in self._get_format_ids() if x is not None]
+            header._info = [x for x in self._get_info_ids() if x is not None]
+            self._header = header
         return self._header
 
     @property

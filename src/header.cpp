@@ -226,66 +226,6 @@ Header::Header(const std::string & text) {
   }
 }
 
-std::vector<std::string> Header::get_contigs() const {
-  std::vector<std::string> vals;
-  vals.reserve(contigs.size());
-  for (const auto & s : contigs) {
-    if (!s.empty()) {
-      vals.push_back(s);
-    }
-  }
-  return vals;
-}
-
-std::vector<std::string> Header::get_filters() const {
-  std::vector<std::string> vals;
-  vals.reserve(filters.size());
-  for (const auto & s : filters) {
-    if (!s.empty()) {
-      vals.push_back(s);
-    }
-  }
-  return vals;
-}
-
-std::vector<std::string> Header::get_formats() const {
-  std::vector<std::string> vals;
-  vals.reserve(format.size());
-  for (const auto & f : format) {
-    if (!f.id.empty()) {
-      vals.push_back(f.id);
-    }
-  }
-  return vals;
-}
-
-std::vector<std::string> Header::get_info() const {
-  std::vector<std::string> vals;
-  vals.reserve(info.size());
-  for (const auto & f : info) {
-    if (!f.id.empty()) {
-      vals.push_back(f.id);
-    }
-  }
-  return vals;
-}
-
-std::vector<std::string> Header::get_info_by_idx() const {
-  std::vector<std::string> vals(info.size());
-  for (std::size_t i = 0; i < info.size(); i++) {
-    vals[i] = info[i].id;
-  }
-  return vals;
-}
-
-std::vector<std::string> Header::get_formats_by_idx() const {
-  std::vector<std::string> vals(format.size());
-  for (std::size_t i = 0; i < format.size(); i++) {
-    vals[i] = format[i].id;
-  }
-  return vals;
-}
-
 std::uint32_t Header::get_contig_id(const std::string & contig) const {
   auto it = contig_ids.find(contig);
   if (it == contig_ids.end()) {

@@ -458,16 +458,24 @@ class TestBcfReader(unittest.TestCase):
         self.assertEqual(sites_var.samples.phased.dtype, np.bool_)
         self.assertEqual(len(sites_var.samples.phased), 0)
 
-        # Creating and discarding BcfReader instances must not leak file descriptors
+        # Discarding a BcfReader must close its file immediately (no reference cycles),
+        # even after touching the header and variant wrappers
         if Path('/proc/self/fd').exists():
             gc.collect()
-            before = len(os.listdir('/proc/self/fd'))
-            for _ in range(25):
-                r = BcfReader(sample_bcf)
-                list(next(r).info)
-                del r
-            gc.collect()
-            after = len(os.listdir('/proc/self/fd'))
+            gc.disable()
+            try:
+                before = len(os.listdir('/proc/self/fd'))
+                for _ in range(25):
+                    r = BcfReader(sample_bcf)
+                    r.header.contigs
+                    r.samples
+                    var = next(r)
+                    list(var.info)
+                    var.samples['GT']
+                    del r, var
+                after = len(os.listdir('/proc/self/fd'))
+            finally:
+                gc.enable()
             self.assertEqual(before, after)
 
     def test_type_stubs_match_extension(self):

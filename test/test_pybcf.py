@@ -3,6 +3,7 @@ import ast
 import gc
 import gzip
 import os
+import resource
 import struct
 import tempfile
 import unittest
@@ -680,6 +681,17 @@ class TestBcfReader(unittest.TestCase):
             truncated_path.write_bytes(raw[:len(raw) // 2])
             with self.assertRaises(ValueError):
                 list(BcfReader(truncated_path))
+
+            # A header length near 4 GB with only a few bytes of text must fail at EOF,
+            # not by allocating the declared length upfront
+            huge_header = Path(tmpdir) / 'huge_header.bcf'
+            with gzip.open(huge_header, 'wb') as gz:
+                gz.write(b'BCF\x02\x02' + struct.pack('<I', 0xFFFFFFFF) + b'##fileformat=VCFv4.2\n')
+            peak_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            with self.assertRaisesRegex(ValueError, 'truncated BCF header text'):
+                BcfReader(huge_header)
+            grown_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - peak_kb
+            self.assertLess(grown_kb, 100_000)
 
     def test_key_lookup_and_corrupt_record_errors(self):
         ''' check missing INFO/FORMAT keys return False/KeyError while corrupt records raise ValueError

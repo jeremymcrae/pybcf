@@ -22,11 +22,14 @@ BCF::BCF(const std::string & path, const std::string & index_path) {
   }
 
   // Read the uint32 length of the NUL-terminated ASCII VCF header text, then parse it.
+  // The length is untrusted, so grow the text in 1 MB chunks rather than allocating it upfront.
   std::uint32_t len = 0;
   infile.read_exact(&len, sizeof(len), "truncated BCF header length");
-  std::string text(len, '\0');
-  if (len > 0) {
-    infile.read_exact(&text[0], len, "truncated BCF header text");
+  std::string text;
+  while (text.size() < len) {
+    std::size_t start = text.size();
+    text.resize(start + std::min<std::size_t>(len - start, 1 << 20));
+    infile.read_exact(&text[start], text.size() - start, "truncated BCF header text");
   }
   header = Header(text);
 

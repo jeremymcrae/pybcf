@@ -38,10 +38,6 @@ void SampleData::parse() {
     is_parsed = true;
     return;
   }
-  if (header == nullptr) {
-    throw std::invalid_argument("missing BCF header for FORMAT");
-  }
-
   const char * raw = buf.get();
   fields.reserve(n_fmt);
   std::uint32_t buf_idx = 0;

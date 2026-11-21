@@ -17,10 +17,6 @@ namespace bcf {
 // and `SampleData` containers holding the raw INFO and per-sample byte blocks.
 class Variant {
 public:
-  Variant() = default;
-  Variant(Variant &&) = default;
-  Variant & operator=(Variant &&) = default;
-
   bool read(GzReader & infile, const Header & header, std::int32_t query_contig_id,
             std::int32_t query_start, std::int32_t query_end);
 

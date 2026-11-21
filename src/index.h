@@ -33,7 +33,7 @@ class IndexFile {
 
   std::int64_t max_coord() const { return 1LL << (min_shift + depth * 3); }
 public:
-  bool open(const std::string & path, bool required = true);
+  void open(const std::string & path, bool required);
   bool query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const;
   bool has_index = false;
 };

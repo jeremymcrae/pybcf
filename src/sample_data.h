@@ -44,8 +44,6 @@ public:
   SampleData(GzReader & infile, const Header & header, std::uint32_t len, std::uint32_t n_fmt,
              std::uint32_t n_samples);
   SampleData() = default;
-  SampleData(SampleData &&) = default;
-  SampleData & operator=(SampleData &&) = default;
 
   std::size_t size();
   std::vector<NamedFormat> & get_fields();

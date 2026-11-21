@@ -29,10 +29,6 @@ void Info::parse() {
     is_parsed = true;
     return;
   }
-  if (header == nullptr) {
-    throw std::invalid_argument("missing BCF header for INFO");
-  }
-
   const char * raw = buf.get();
   fields.reserve(n_info);
   std::uint32_t buf_idx = info_offset;

@@ -23,7 +23,7 @@ std::int64_t first_bin_at_level(std::int32_t level) {
 /// @brief load a BGZF-compressed CSIv1 index file (https://samtools.github.io/hts-specs/CSIv1.pdf)
 /// @param path path to CSI index file
 /// @param required whether a missing index file should throw an error
-bool IndexFile::open(const std::string & path, bool required) {
+void IndexFile::open(const std::string & path, bool required) {
   has_index = false;
   indices.clear();
 
@@ -32,7 +32,7 @@ bool IndexFile::open(const std::string & path, bool required) {
     if (required) {
       throw std::invalid_argument("cannot open index file at " + path);
     }
-    return false;
+    return;
   }
 
   // 1. Validate the 4-byte "CSI\x01" magic header and global binning parameters.
@@ -101,18 +101,14 @@ bool IndexFile::open(const std::string & path, bool required) {
     indices.push_back(std::move(bins));
   }
   has_index = true;
-  return true;
 }
 
 /// @brief find the earliest BGZF virtual offset of a chunk that can overlap 0-based `[beg, end)`
+/// The caller checks the region first, so `0 <= beg <= end`.
 bool IndexFile::query(std::uint32_t contig_id, std::int64_t beg, std::int64_t end, Offsets & out) const {
-  if (end < beg) {
-    throw std::invalid_argument("start is after end: " + std::to_string(beg) + " > " + std::to_string(end));
-  }
   if (contig_id >= indices.size() || beg >= max_coord()) {
     return false;
   }
-  beg = std::max<std::int64_t>(0, beg);
   end = std::min(max_coord(), std::max(beg + 1, end));
 
   // `bins` is sorted by bin number. Tree level `l` splits `[0, max_coord)` into `8^l` bins

@@ -15,14 +15,14 @@ namespace bcf {
 // High-level Python return shape of an INFO entry, determined from both the BCF
 // record's type byte and the tag's `Number`/`Type` metadata in the VCF header.
 enum InfoKind : std::int8_t {
-  info_missing = -2,
-  info_flag = -1,
-  info_scalar_float = 0,
-  info_scalar_int = 1,
-  info_string = 2,
-  info_vector_float = 3,
-  info_vector_int = 4,
-  info_vector_string = 5,
+  info_missing,
+  info_flag,
+  info_scalar_float,
+  info_scalar_int,
+  info_string,
+  info_vector_float,
+  info_vector_int,
+  info_vector_string,
 };
 
 // Byte location and decoded shape of one INFO field's payload inside `Info::buf`.
@@ -59,8 +59,6 @@ public:
       : header(hdr), n_info(num_info), info_offset(offset), buf_len(shared_len),
         buf(num_info > 0 ? std::move(shared_buf) : nullptr) {}
   Info() = default;
-  Info(Info &&) = default;
-  Info & operator=(Info &&) = default;
 
   std::size_t size();
   std::vector<NamedInfo> & get_fields();

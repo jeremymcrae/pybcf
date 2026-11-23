@@ -5,11 +5,8 @@ This is a package for reading BCF files (binary call format). Similar to pysam/c
 but limited to reading from BCF files only, and oriented around getting genotype 
 data into numpy arrays quickly. 
 
-This performs relatively better at larger sample sizes e.g. it's 7X faster than
-pysam with 2k samples, but improves to 50X faster than pysam with 30k samples. 
-Currently it's slower than pysam for BCFs without sample level data, but BCFs
-without genotypes aren't generally a limiting factor e.g. it still parses 
-300k variants/second under those conditions.
+This performs relatively better at larger sample sizes e.g. it's ~15X faster than
+pysam with 100 samples, but improves to ~200X faster than pysam with 100k samples. 
 
 ```py
 from pybcf import BcfReader

@@ -46,9 +46,20 @@ bool is_bgzf_header(const unsigned char * h) {
 } // namespace
 
 int open_file(const std::string & path) {
+  // "-" means standard input. It is duplicated, so closing the file leaves stdin open.
 #ifdef _WIN32
+  if (path == "-") {
+    int fd = _dup(0);
+    if (fd >= 0) {
+      _setmode(fd, _O_BINARY);
+    }
+    return fd;
+  }
   return _open(path.c_str(), _O_RDONLY | _O_BINARY);
 #else
+  if (path == "-") {
+    return ::dup(STDIN_FILENO);
+  }
   return ::open(path.c_str(), O_RDONLY);
 #endif
 }

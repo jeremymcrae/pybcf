@@ -12,7 +12,8 @@ namespace bcf {
 // The most bytes a BGZF block can hold, both compressed and uncompressed.
 const std::size_t BGZF_MAX_BLOCK_SIZE = 65536;
 
-// Open a file for reading, returning its file descriptor, or -1 on failure.
+// Open a file for reading, or standard input if `path` is "-", returning its file
+// descriptor, or -1 on failure.
 int open_file(const std::string & path);
 void close_file(int fd);
 

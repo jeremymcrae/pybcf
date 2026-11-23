@@ -1,6 +1,7 @@
 # cython: boundscheck=False, wraparound=False
 import logging
 import os
+import sys
 
 cimport cython
 from cpython.unicode cimport PyUnicode_AsUTF8AndSize
@@ -329,9 +330,15 @@ cdef class BcfReader:
     def __cinit__(self, path, index_path=None):
         self.thisptr = NULL
         self.is_open = False
-        # Store the absolute path, so repr() still names the right file if the working
-        # directory changes after opening.
-        self.path = os.fsencode(os.path.abspath(path))
+        # '-' and the sys.stdin file object both mean standard input, which the C++ reader
+        # opens when given '-'. Any other path is stored as an absolute path, so repr()
+        # still names the right file if the working directory changes after opening.
+        if path is not None and (path is sys.stdin or path is getattr(sys.stdin, 'buffer', None)):
+            path = '-'
+        if path in ('-', b'-'):
+            self.path = b'-'
+        else:
+            self.path = os.fsencode(os.path.abspath(path))
         index_path = b'' if index_path is None else os.fsencode(index_path)
 
         logging.debug(f'opening BcfReader from {self.path.decode("utf8")}')

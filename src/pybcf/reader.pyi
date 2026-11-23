@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from os import PathLike
 from types import TracebackType
-from typing import Any, NoReturn, TypeVar, overload
+from typing import Any, BinaryIO, NoReturn, TextIO, TypeVar, overload
 
 import numpy as np
 from numpy.typing import NDArray
@@ -92,7 +92,7 @@ class BcfVariant:
 class BcfReader:
     def __init__(
         self,
-        path: str | PathLike[str],
+        path: str | PathLike[str] | TextIO | BinaryIO,
         index_path: str | PathLike[str] | None = None,
     ) -> None: ...
     def close(self) -> None: ...

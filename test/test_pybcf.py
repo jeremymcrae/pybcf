@@ -189,19 +189,23 @@ class TestBcfReader(unittest.TestCase):
                         else:
                             np.testing.assert_array_equal(var.samples[key], other.samples[key])
 
-    @unittest.skipUnless(os.path.exists('/dev/stdin'), 'needs /dev/stdin')
     def test_read_from_pipe(self):
-        ''' check a BCF can be read from a pipe, with or without compression
+        ''' check a BCF can be read from a pipe, with or without compression, by any name for stdin
         '''
         path = Path(__file__).parent / 'data' / 'hapmap_3.3.hg38.shrunk.bcf'
         sites = [f'{x.chrom} {x.pos}' for x in BcfReader(path)]
-        code = ('from pybcf import BcfReader\n'
-                'for x in BcfReader("/dev/stdin"):\n'
-                '    print(x.chrom, x.pos)')
-        for data in (path.read_bytes(), gzip.open(path).read()):
-            piped = subprocess.run([sys.executable, '-c', code], input=data,
-                                   capture_output=True, check=True)
-            self.assertEqual(piped.stdout.decode().splitlines(), sites)
+        stdin_names = ['"-"', 'sys.stdin', 'sys.stdin.buffer']
+        if os.path.exists('/dev/stdin'):
+            stdin_names.append('"/dev/stdin"')
+        for name in stdin_names:
+            code = ('import sys\n'
+                    'from pybcf import BcfReader\n'
+                    f'for x in BcfReader({name}):\n'
+                    '    print(x.chrom, x.pos)')
+            for data in (path.read_bytes(), gzip.open(path).read()):
+                piped = subprocess.run([sys.executable, '-c', code], input=data,
+                                       capture_output=True, check=True)
+                self.assertEqual(piped.stdout.decode().splitlines(), sites)
 
     def test_type_stubs_match_extension(self):
         ''' check reader.pyi and py.typed exist, parse cleanly, and match Cython classes

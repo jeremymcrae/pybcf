@@ -28,6 +28,10 @@ for var in bcf:
 # include both ends (pysam's fetch is 0-based and excludes the end)
 for var in bcf.fetch('chr1', 10000, 200000):
     print(var.chrom, var.pos)
+
+# you can read from stdin, but that doesn't allow fetching random regions
+import sys
+bcf = BcfReader(sys.stdin) 
 ```
 
 ### Limitations
